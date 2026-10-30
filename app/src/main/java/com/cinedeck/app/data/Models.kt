@@ -194,6 +194,8 @@ data class Settings(
     val subtitleLangs: String = "eng",
     val autoSubtitles: Boolean = true,
     val rdToken: String = "",
+    val navPosition: String = "side", // side | top (TV and tablets)
+    val streamSort: String = "quality", // quality | seeders | size
 )
 
 @Serializable

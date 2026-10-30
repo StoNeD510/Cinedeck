@@ -34,6 +34,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,9 +86,9 @@ private fun Modifier.combinedClick(src: MutableInteractionSource, onClick: () ->
 fun posterWidth(): Dp = if (LocalIsTv.current) 140.dp else if (LocalWide.current) 130.dp else 112.dp
 
 @Composable
-fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f) {
+fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f, onLongClick: (() -> Unit)? = null) {
     Column(modifier.then(if (width != null) Modifier.width(width) else Modifier)) {
-        FocusBox(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale) {
+        FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale) {
             AsyncImage(
                 model = meta.poster, contentDescription = meta.name, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(C.Surface2),
@@ -137,14 +140,16 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null) {
 fun postersAcross(): Int = if (LocalWide.current) 6 else 3
 
 @Composable
-fun PosterRow(items: List<Meta>, onOpen: (Meta) -> Unit, watchedIds: Set<String> = emptySet()) {
+fun PosterRow(items: List<Meta>, onOpen: (Meta) -> Unit, watchedIds: Set<String> = watchedTitleIds()) {
+    var menuFor by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Meta?>(null) }
+    menuFor?.let { m -> TitleActions(m, onOpen = { onOpen(m) }, onDismiss = { menuFor = null }) }
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
         val n = postersAcross()
         val gap = 10.dp
         val peek = 18.dp // a sliver of the next poster shows the row scrolls
         val w = (maxWidth - 16.dp - gap * n - peek) / n
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, width = w, watched = m.id in watchedIds, focusScale = 1.05f) }
+            items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, width = w, watched = m.id in watchedIds, focusScale = 1.05f, onLongClick = { menuFor = m }) }
         }
     }
 }
@@ -200,4 +205,128 @@ fun Modifier.tvInitialFocus(key: Any? = Unit): Modifier {
         }
     }
     return this.focusRequester(req)
+}
+
+/**
+ * Text box that behaves on a TV remote: moving over it only highlights it, and the keyboard
+ * opens after you press OK. On phones and tablets it's a normal text box.
+ */
+@Composable
+fun RemoteTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    password: Boolean = false,
+    singleLine: Boolean = true,
+    onSubmit: (() -> Unit)? = null,
+) {
+    val colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = C.Accent, unfocusedBorderColor = C.Surface2,
+        focusedContainerColor = C.Surface, unfocusedContainerColor = C.Surface,
+    )
+    val visual = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation()
+    else androidx.compose.ui.text.input.VisualTransformation.None
+    val ime = androidx.compose.foundation.text.KeyboardOptions(
+        imeAction = if (singleLine) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default,
+    )
+    if (!LocalIsTv.current) {
+        androidx.compose.material3.OutlinedTextField(
+            value, onValueChange, label = { Text(label) }, placeholder = { Text(placeholder) },
+            singleLine = singleLine, maxLines = if (singleLine) 1 else 4, colors = colors, visualTransformation = visual,
+            keyboardOptions = ime,
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onSubmit?.invoke() }),
+            shape = RoundedCornerShape(10.dp), modifier = modifier.fillMaxWidth(),
+        )
+        return
+    }
+    var editing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    FocusBox(onClick = { editing = true }, modifier = modifier.fillMaxWidth(), focusScale = 1.02f) { focused ->
+        Column(Modifier.fillMaxWidth().background(C.Surface).padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(label, color = if (focused) C.Accent else C.Muted, fontSize = 11.sp)
+            val shown = when {
+                value.isEmpty() -> placeholder.ifEmpty { "Press OK to type" }
+                password -> "•".repeat(value.length.coerceAtMost(24))
+                else -> value
+            }
+            Text(shown, color = if (value.isEmpty()) C.Muted else C.Text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+    if (editing) {
+        var draft by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(value) }
+        val fr = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+        androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(150); runCatching { fr.requestFocus() } }
+        fun commit() { onValueChange(draft); editing = false; onSubmit?.invoke() }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editing = false },
+            containerColor = C.Surface,
+            title = { Text(label, color = C.Text) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    draft, { draft = it }, placeholder = { Text(placeholder) }, singleLine = singleLine, maxLines = if (singleLine) 1 else 4,
+                    colors = colors, visualTransformation = visual,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { commit() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(fr),
+                )
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { commit() }) { Text("OK", color = C.Accent) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("Cancel", color = C.Muted) } },
+        )
+    }
+}
+
+/** Titles with anything marked watched (movies watched, or shows with watched episodes). */
+@Composable
+fun watchedTitleIds(): Set<String> {
+    val d by com.cinedeck.app.data.Store.data.collectAsState()
+    return androidx.compose.runtime.remember(d.progress) { d.progress.values.filter { it.watched }.map { it.metaId }.toSet() }
+}
+
+/** Hold-OK / long-press menu for a poster: mark watched, My List, open. */
+@Composable
+fun TitleActions(meta: Meta, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val d by com.cinedeck.app.data.Store.data.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val watched = d.progress.values.any { it.metaId == meta.id && it.watched }
+    val inList = d.library.any { it.id == meta.id }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.Surface,
+        title = { Text(meta.name, color = C.Text, maxLines = 2) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuRow(if (watched) "Mark as unwatched" else if (meta.type == "series") "Mark all aired episodes watched" else "Mark as watched", Modifier.tvInitialFocus()) {
+                    scope.launch {
+                        if (meta.type == "series") {
+                            val full = com.cinedeck.app.data.Addons.meta("series", meta.id)
+                            if (full == null) {
+                                android.widget.Toast.makeText(ctx, "Couldn't load episodes", android.widget.Toast.LENGTH_SHORT).show()
+                            } else if (watched) {
+                                com.cinedeck.app.data.Store.removeProgressForMeta(meta.id)
+                            } else {
+                                com.cinedeck.app.data.Store.setWatched(full, com.cinedeck.app.data.Tracker.sortedEpisodes(full).filter { it.isAired() && it.season != 0 }, true)
+                            }
+                        } else {
+                            com.cinedeck.app.data.Store.setWatched(meta, emptyList(), !watched)
+                        }
+                        onDismiss()
+                    }
+                }
+                MenuRow(if (inList) "Remove from My List" else "Add to My List") { com.cinedeck.app.data.Store.toggleLibrary(meta); onDismiss() }
+                MenuRow("Open details") { onDismiss(); onOpen() }
+            }
+        },
+        confirmButton = {},
+    )
+}
+
+@Composable
+private fun MenuRow(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, modifier = modifier.fillMaxWidth(), focusScale = 1.02f) { f ->
+        Text(label, color = if (f) Color.Black else C.Text, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth().background(if (f) C.Accent else C.Surface2).padding(14.dp))
+    }
 }

@@ -52,14 +52,7 @@ fun SearchScreen(onOpen: (String, String) -> Unit) {
         item {
             Column(Modifier.padding(16.dp)) {
                 Text("Search", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                OutlinedTextField(
-                    value = q, onValueChange = { q = it }, singleLine = true,
-                    placeholder = { Text("Movies, TV shows…") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.Accent, unfocusedBorderColor = C.Surface2, focusedContainerColor = C.Surface, unfocusedContainerColor = C.Surface),
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                )
+                RemoteTextField(q, { q = it }, "Search", placeholder = "Movies, TV shows…", modifier = Modifier.padding(top = 10.dp))
             }
         }
         if (busy) item { Loading() }

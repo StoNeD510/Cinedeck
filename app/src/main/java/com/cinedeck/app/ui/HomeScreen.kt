@@ -185,7 +185,7 @@ fun HomeScreen(
 
         shown.forEach { r ->
             item(key = "h_" + r.key) { SectionHeader(r.title) { onSeeAll(r.key, r.type) } }
-            item(key = "r_" + r.key) { PosterRow(r.items, { onOpen(it.type, it.id) }, watchedIds) }
+            item(key = "r_" + r.key) { PosterRow(r.items, { onOpen(it.type, it.id) }) }
         }
     }
 }

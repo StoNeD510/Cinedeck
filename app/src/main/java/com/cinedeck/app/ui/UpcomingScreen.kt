@@ -16,6 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,6 +83,12 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
                     Pill("Recently aired", mode == "recent") { mode = "recent" }
                 }
                 Text("Shows in My List and shows you've watched appear here.", color = C.Muted, fontSize = 12.sp)
+                val unwatched = entries.filter { !it.watched }
+                if (mode == "recent" && unwatched.isNotEmpty()) {
+                    HeroButton("Mark all ${unwatched.size} as watched", Icons.Default.DoneAll) {
+                        unwatched.groupBy { it.meta.id }.values.forEach { list -> Store.setWatched(list.first().meta, list.map { it.video }, true) }
+                    }
+                }
             }
         }
         if (loading && followed.isEmpty()) item { Loading() }
@@ -92,10 +102,11 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
             }
             items(list, key = { it.video.id }) { e ->
                 val aired = e.video.isAired(now)
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 FocusBox(
                     onClick = { if (aired) onPlay("series", e.meta.id, e.video.id) else onOpen("series", e.meta.id) },
                     onLongClick = { onOpen("series", e.meta.id) },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(), focusScale = 1.02f,
+                    modifier = Modifier.weight(1f), focusScale = 1.02f,
                 ) {
                     Row(Modifier.fillMaxWidth().background(C.Surface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(e.meta.poster, null, contentScale = ContentScale.Crop, modifier = Modifier.width(54.dp).aspectRatio(2f / 3f).background(C.Surface2))
@@ -113,8 +124,19 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
                                 if (e.video.ep == 1) Tag(if (e.video.season == 1) "SERIES PREMIERE" else "SEASON PREMIERE", C.AccentDim)
                             }
                         }
-                        if (e.watched) Icon(Icons.Default.CheckCircle, null, tint = C.Accent)
                     }
+                }
+                if (aired) {
+                    Spacer(Modifier.width(8.dp))
+                    FocusBox(onClick = { Store.setWatched(e.meta, listOf(e.video), !e.watched) }, shape = RoundedCornerShape(50), focusScale = 1.12f) { f ->
+                        Icon(
+                            if (e.watched) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            if (e.watched) "Mark unwatched" else "Mark watched",
+                            tint = if (e.watched || f) C.Accent else C.Muted,
+                            modifier = Modifier.background(if (f) C.Surface2 else Color.Transparent).padding(10.dp).size(28.dp),
+                        )
+                    }
+                }
                 }
             }
         }

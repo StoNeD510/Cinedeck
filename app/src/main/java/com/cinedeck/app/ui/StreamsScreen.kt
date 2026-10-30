@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -74,8 +75,18 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
     }
     val p2pOnly = remember(results) { results.orEmpty().sumOf { a -> a.streams.count { it.url == null && it.infoHash != null } } }
     val errors = results.orEmpty().filter { it.error != null }
-    val qualities = listOf("All", "4K", "1080p", "720p", "SD").filter { q -> q == "All" || rows.any { it.info.resolution == q } }
-    val shown = rows.filter { quality == "All" || it.info.resolution == quality }
+    val qualities = listOf("All", "4K", "1440p", "1080p", "720p", "SD").filter { q -> q == "All" || rows.any { it.info.resolution == q } }
+    val sort = data.settings.streamSort
+    val filtered = rows.filter { quality == "All" || it.info.resolution == quality }
+    val shown = when (sort) {
+        "seeders" -> filtered.sortedByDescending { it.info.seeders ?: -1 }
+        "size" -> filtered.sortedByDescending { it.info.bytes }
+        else -> filtered.withIndex().sortedWith(
+            compareByDescending<IndexedValue<Row_>> { it.value.info.rank }
+                .thenByDescending { if (it.value.info.cached) 1 else 0 }
+                .thenBy { it.index }, // keep the addon's own order within a resolution
+        ).map { it.value }
+    }
 
     fun play(r: Row_) {
         val s = r.stream
@@ -115,9 +126,20 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
                     item { Pill("External app", engine == "external") { engine = "external" } }
                 }
                 if (qualities.size > 2) {
-                    Text("Quality", color = C.Muted, fontSize = 12.sp)
+                    Text("Resolution", color = C.Muted, fontSize = 12.sp)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(qualities) { q -> Pill(q, q == quality) { quality = q } }
+                        items(qualities) { q ->
+                            val n = if (q == "All") rows.size else rows.count { it.info.resolution == q }
+                            Pill("$q ($n)", q == quality) { quality = q }
+                        }
+                    }
+                }
+                if (rows.isNotEmpty()) {
+                    Text("Sort by", color = C.Muted, fontSize = 12.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { Pill("Best quality", sort == "quality") { Store.updateSettings { it.copy(streamSort = "quality") } } }
+                        item { Pill("Most seeders", sort == "seeders") { Store.updateSettings { it.copy(streamSort = "seeders") } } }
+                        item { Pill("Largest file", sort == "size") { Store.updateSettings { it.copy(streamSort = "size") } } }
                     }
                 }
             }
@@ -135,7 +157,20 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
                     },
                 )
             }
-            else -> itemsIndexed(shown, key = { _, r -> r.addonName + r.stream.playableUrl + r.stream.title }) { i, r -> StreamRow(r, ::play, if (i == 0) Modifier.tvInitialFocus(shown.size) else Modifier) }
+            else -> shown.forEachIndexed { i, r ->
+                // Section headers when sorted by quality: "4K · 12 streams"
+                if (sort == "quality" && (i == 0 || shown[i - 1].info.resolution != r.info.resolution)) {
+                    val n = shown.count { it.info.resolution == r.info.resolution }
+                    item(key = "h_${r.info.resolution}") {
+                        Text(
+                            "${r.info.resolution ?: "Other"}  ·  $n stream${if (n == 1) "" else "s"}",
+                            color = C.Accent, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 4.dp),
+                        )
+                    }
+                }
+                item(key = "s_" + i + r.addonName + r.stream.playableUrl) { StreamRow(r, ::play, if (i == 0) Modifier.tvInitialFocus(shown.size + sort.hashCode()) else Modifier) }
+            }
         }
         if (errors.isNotEmpty()) item {
             Text(
@@ -148,24 +183,45 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
 
 @Composable
 private fun StreamRow(r: Row_, onPlay: (Row_) -> Unit, focus: Modifier = Modifier) {
-    FocusBox(onClick = { onPlay(r) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().then(focus), focusScale = 1.02f) {
-        Row(Modifier.fillMaxWidth().background(C.Surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(r.info.resolution ?: "—", color = if (r.info.rank >= 3) C.Accent else C.Text, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                if (r.info.cached) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Bolt, null, tint = C.Gold, modifier = Modifier.size(14.dp))
-                    Text("Instant", color = C.Gold, fontSize = 10.sp)
+    val i = r.info
+    FocusBox(onClick = { onPlay(r) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().then(focus), focusScale = 1.02f) { focused ->
+        Row(Modifier.fillMaxWidth().background(if (focused) C.Surface2 else C.Surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Resolution + source column
+            Column(Modifier.width(84.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    i.resolution ?: "?", fontSize = 18.sp, fontWeight = FontWeight.Black,
+                    color = when (i.rank) { 4 -> C.Gold; 3 -> C.Accent; else -> C.Text },
+                )
+                i.source?.let {
+                    Spacer(Modifier.height(3.dp))
+                    Tag(it, if (it == "CAM") C.New else if (it == "Remux" || it == "BluRay") C.AccentDim else C.Surface2, Color.White)
                 }
-                r.info.size?.let { Text(it, color = C.Muted, fontSize = 11.sp) }
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(r.addonName + (r.stream.name?.let { " · " + it.replace("\n", " ") } ?: ""), color = C.Accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(r.stream.text, color = C.Text, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
-                if (r.info.tags.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { r.info.tags.forEach { Tag(it) } }
+                // Key facts first: instant, seeders, size, then format tags
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (i.cached) Row(
+                        Modifier.background(Color(0x33F5C518), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.Bolt, null, tint = C.Gold, modifier = Modifier.size(13.dp))
+                        Text("Instant", color = C.Gold, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    i.seeders?.let { n ->
+                        val c = when { n >= 50 -> C.Accent; n >= 10 -> C.Gold; else -> C.New }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Group, "Seeders", tint = c, modifier = Modifier.size(14.dp))
+                            Text(" $n", color = c, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    i.size?.let { Text(it, color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                    i.tags.take(4).forEach { Tag(it) }
                 }
+                Spacer(Modifier.height(4.dp))
+                val fileLine = (r.stream.behaviorHints?.filename ?: r.stream.title?.lineSequence()?.firstOrNull() ?: r.stream.description ?: "")
+                Text(fileLine, color = C.Text, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+                Text(r.addonName + (r.stream.name?.let { " · " + it.replace("\n", " ") } ?: ""), color = C.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (r.stream.playableUrl == null) Icon(Icons.Default.OpenInNew, "Opens outside the app", tint = C.Muted)
         }

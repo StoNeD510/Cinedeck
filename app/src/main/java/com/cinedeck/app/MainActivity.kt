@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -40,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -178,7 +180,13 @@ private fun AppRoot(wide: Boolean) {
         restoreState = true
     }
 
-    if (wide) {
+    val navTop = Store.data.collectAsState().value.settings.navPosition == "top"
+    if (wide && navTop) {
+        Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            if (isTopLevel) TopTabs(route) { go(it) }
+            Box(Modifier.weight(1f).fillMaxWidth()) { Host(nav) }
+        }
+    } else if (wide) {
         Row(Modifier.fillMaxSize().systemBarsPadding()) {
             if (isTopLevel) NavigationRail(containerColor = C.Bg, modifier = Modifier.fillMaxHeight()) {
                 Spacer(Modifier.height(12.dp))
@@ -211,6 +219,31 @@ private fun AppRoot(wide: Boolean) {
                             indicatorColor = C.Surface2, unselectedIconColor = C.Muted, unselectedTextColor = C.Muted,
                         ),
                     )
+                }
+            }
+        }
+    }
+}
+
+/** Horizontal tab bar across the top (Settings → Navigation bar → Top). */
+@Composable
+private fun TopTabs(route: String, onGo: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(C.Bg).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        Text("CineDeck", color = C.Accent, fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, modifier = Modifier.padding(end = 18.dp))
+        tabs.forEach { t ->
+            val sel = route == t.route
+            com.cinedeck.app.ui.FocusBox(onClick = { onGo(t.route) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50), focusScale = 1.05f) {
+                Row(
+                    Modifier.background(if (sel) C.Surface2 else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Icon(t.icon, null, tint = if (sel) C.Accent else C.Muted, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(t.label, color = if (sel) C.Accent else C.Text, fontSize = 14.sp)
                 }
             }
         }

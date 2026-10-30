@@ -84,10 +84,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
         }
         item {
             Column(Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    newAddon, { newAddon = it }, placeholder = { Text("https://…/manifest.json") }, colors = field(),
-                    shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), maxLines = 4,
-                )
+                RemoteTextField(newAddon, { newAddon = it }, "Addon link", placeholder = "https://…/manifest.json", singleLine = false)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     HeroButton(if (adding) "Installing…" else "Install", null, primary = true) {
@@ -151,10 +148,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                     color = C.Muted, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    token, { token = it }, placeholder = { Text("API token") }, singleLine = true, colors = field(),
-                    visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(),
-                )
+                RemoteTextField(token, { token = it }, "Real-Debrid API token", password = true)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     HeroButton("Save & check", null, primary = true) {
@@ -179,6 +173,18 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
             }
         }
 
+        // ---------- Appearance ----------
+        item { SettingsHeader("APPEARANCE") }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Navigation bar (TV and tablets)", color = C.Text, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Side", data.settings.navPosition != "top") { Store.updateSettings { it.copy(navPosition = "side") } }
+                    Pill("Top", data.settings.navPosition == "top") { Store.updateSettings { it.copy(navPosition = "top") } }
+                }
+            }
+        }
+
         // ---------- Player ----------
         item { SettingsHeader("PLAYER") }
         item {
@@ -197,11 +203,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                         colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.Black),
                     )
                 }
-                OutlinedTextField(
-                    langs, { langs = it; Store.updateSettings { s -> s.copy(subtitleLangs = it) } },
-                    label = { Text("Subtitle languages (e.g. eng, spa, tgl)") }, singleLine = true, colors = field(),
-                    shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(),
-                )
+                RemoteTextField(langs, { langs = it; Store.updateSettings { s -> s.copy(subtitleLangs = it) } }, "Subtitle languages (e.g. eng, spa, tgl)")
             }
         }
 
@@ -215,7 +217,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 }
             }
         }
-        item { Text("CineDeck 0.1.3", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
+        item { Text("CineDeck 0.2.0", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
     }
 }
 

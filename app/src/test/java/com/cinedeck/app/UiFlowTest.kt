@@ -115,6 +115,23 @@ class UiFlowTest {
         println("DPAD ON DETAILS? " + onDetails() + " focus=" + focusedText())
     }
 
+    private fun posters() = rule.onAllNodes(hasClickAction() and hasAnyDescendant(hasContentDescription("", substring = true)), useUnmergedTree = true).fetchSemanticsNodes().size
+
+    @Test fun browseFilters() {
+        waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
+        rule.onAllNodesWithText("Browse").onFirst().performClick()
+        waitFor("movies grid") { posters() > 12 }
+        println("BROWSE movies posters=" + posters() + " summary=" + texts().firstOrNull { it.contains("·") })
+        val steps = listOf("TV Shows", "Comedy", "Movies", "Drama", "TV Shows", "All")
+        for (step in steps) {
+            rule.onAllNodesWithText("Filters").onFirst().performClick(); rule.waitForIdle()
+            rule.onAllNodesWithText(step).onLast().performClick()
+            waitFor("after $step") { posters() > 6 && texts().any { it.contains("·") && (step == "All" || it.contains(step)) } }
+            println("BROWSE $step -> posters=" + posters() + " summary=" + texts().first { it.contains("  ·  ") })
+            if (texts().any { it == "Done" }) { rule.onAllNodesWithText("Done").onFirst().performClick(); rule.waitForIdle() }
+        }
+    }
+
     @Test fun seriesFlow() {
         waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
         tapPoster("series")

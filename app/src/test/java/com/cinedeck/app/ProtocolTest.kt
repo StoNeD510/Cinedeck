@@ -33,6 +33,6 @@ class ProtocolTest {
         val s = Stream(name = "Torrentio\n4k DV | HDR [RD+]", title = "Movie.2023.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265\n👤 120 💾 18.4 GB ⚙️ ThePirateBay")
         val i = StreamInfo.of(s)
         println(i)
-        assertEquals("4K", i.resolution); assertTrue(i.cached); assertEquals("18.4 GB", i.size)
+        assertEquals("4K", i.resolution); assertTrue(i.cached); assertEquals("18.4 GB", i.size); assertEquals(120, i.seeders); assertEquals("WEB-DL", i.source)
     }
 }

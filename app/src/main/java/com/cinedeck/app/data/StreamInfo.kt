@@ -7,9 +7,13 @@ data class StreamInfo(
     val size: String?,
     val cached: Boolean,
     val rank: Int,
+    val seeders: Int?,
+    val source: String?,   // Remux, BluRay, WEB-DL, WEBRip, HDTV, DVD, CAM…
+    val bytes: Long,
 ) {
     companion object {
         private val sizeRx = Regex("""(\d+(?:[.,]\d+)?)\s?(GB|MB|GiB|MiB)""", RegexOption.IGNORE_CASE)
+        private val seedRx = Regex("""(?:👤|Seeders?:?|S:)\s*(\d+)""", RegexOption.IGNORE_CASE)
 
         fun of(s: Stream): StreamInfo {
             val t = listOfNotNull(s.name, s.title, s.description, s.behaviorHints?.filename).joinToString(" ")
@@ -37,7 +41,23 @@ data class StreamInfo(
                 ?: sizeRx.find(t)?.value
             val cached = Regex("""\[RD\+]|RD\+|⚡|\[RD download]|INSTANT""").containsMatchIn(u)
             val rank = when (res) { "4K" -> 4; "1440p" -> 3; "1080p" -> 3; "720p" -> 2; "SD" -> 1; else -> 0 }
-            return StreamInfo(res, tags, size, cached, rank)
+            val seeders = seedRx.find(t)?.groupValues?.get(1)?.toIntOrNull()
+            val source = when {
+                "REMUX" in u -> "Remux"
+                Regex("""BLU-?RAY|BDRIP|BRRIP|\bBD\b""").containsMatchIn(u) -> "BluRay"
+                Regex("""WEB-?DL""").containsMatchIn(u) -> "WEB-DL"
+                Regex("""WEB-?RIP""").containsMatchIn(u) -> "WEBRip"
+                Regex("""\bWEB\b""").containsMatchIn(u) -> "WEB"
+                "HDTV" in u -> "HDTV"
+                Regex("""DVDRIP|\bDVD\b""").containsMatchIn(u) -> "DVD"
+                Regex("""\bCAM\b|HDCAM|TELESYNC|\bHDTS\b|\bTS\b""").containsMatchIn(u) -> "CAM"
+                else -> null
+            }
+            val bytes = s.behaviorHints?.videoSize ?: sizeRx.find(t)?.let { m ->
+                val n = m.groupValues[1].replace(',', '.').toDoubleOrNull() ?: 0.0
+                (if (m.groupValues[2].uppercase().startsWith("G")) n * (1L shl 30) else n * (1L shl 20)).toLong()
+            } ?: 0L
+            return StreamInfo(res, tags.filterNot { it == "Remux" || it == "CAM" }, size, cached, rank, seeders, source, bytes)
         }
 
         fun formatBytes(b: Long): String =
