@@ -1,0 +1,9 @@
+-keep class org.videolan.** { *; }
+-keep class androidx.media3.decoder.ffmpeg.** { *; }
+-keep class com.cinedeck.app.data.** { *; }
+-keepattributes *Annotation*, InnerClasses, Signature
+-dontwarn org.videolan.**
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**

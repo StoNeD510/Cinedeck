@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CineDeck</string>
+    <color name="bg">#0B0D10</color>
+    <color name="accent">#00D49B</color>
+
+    <style name="Theme.CineDeck" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+
+    <style name="Theme.CineDeck.Player" parent="Theme.CineDeck">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
