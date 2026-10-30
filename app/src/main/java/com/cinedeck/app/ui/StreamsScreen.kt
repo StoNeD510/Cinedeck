@@ -59,7 +59,7 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
     var meta by remember { mutableStateOf<Meta?>(Addons.cachedMeta(type, metaId)) }
     var results by remember { mutableStateOf<List<Addons.AddonStreams>?>(null) }
     var quality by rememberSaveable { mutableStateOf("All") }
-    var engine by rememberSaveable { mutableStateOf(data.settings.engine) }
+    val engine = data.settings.engine
 
     LaunchedEffect(type, metaId, videoId) {
         if (meta == null) meta = runCatching { Addons.meta(type, metaId) }.getOrNull()
@@ -118,13 +118,6 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
         }
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Play with", color = C.Muted, fontSize = 12.sp)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { Pill("Auto", engine == "auto") { engine = "auto" } }
-                    item { Pill("ExoPlayer", engine == "exo") { engine = "exo" } }
-                    item { Pill("VLC", engine == "vlc") { engine = "vlc" } }
-                    item { Pill("External app", engine == "external") { engine = "external" } }
-                }
                 if (qualities.size > 2) {
                     Text("Resolution", color = C.Muted, fontSize = 12.sp)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

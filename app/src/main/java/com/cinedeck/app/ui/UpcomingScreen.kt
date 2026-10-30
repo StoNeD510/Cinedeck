@@ -71,7 +71,7 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
     val all = remember(followed, data.progress) { Tracker.calendar(data, followed.values.toList(), past = 30, future = 365) }
     val now = java.time.Instant.now()
     val entries = if (mode == "upcoming") all.filter { !it.video.isAired(now) }
-    else all.filter { it.video.isAired(now) }.reversed()
+    else all.filter { it.video.isAired(now) && !it.watched }.reversed()
     val byDay = entries.groupBy { it.video.releasedDate!! }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -94,7 +94,7 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
         if (loading && followed.isEmpty()) item { Loading() }
         else if (followed.isEmpty()) item { Message("No shows followed yet", "Add a TV show to My List or start watching one to see its episode schedule here.") }
         else if (entries.isEmpty()) item {
-            Message(if (mode == "upcoming") "No announced episodes" else "Nothing aired in the last 30 days")
+            Message(if (mode == "upcoming") "No announced episodes" else "You're all caught up", if (mode == "recent") "Episodes you've watched are hidden here." else null)
         }
         byDay.forEach { (day, list) ->
             item(key = "d$day") {

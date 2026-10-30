@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(Modifier.fillMaxSize().background(C.Bg)) {
                     val wide = tv || maxWidth >= 720.dp
                     CompositionLocalProvider(LocalIsTv provides tv, LocalWide provides wide) {
-                        AppRoot(wide)
+                        com.cinedeck.app.ui.StableScroll { AppRoot(wide) }
                         CrashReport()
                     }
                 }

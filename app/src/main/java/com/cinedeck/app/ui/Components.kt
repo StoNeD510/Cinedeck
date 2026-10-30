@@ -366,3 +366,25 @@ fun Logo(size: androidx.compose.ui.unit.TextUnit = 20.sp, mark: Boolean = true) 
         )
     }
 }
+
+/**
+ * Stops lists from nudging when the remote moves along a row: a list only scrolls when the
+ * newly focused item is actually off screen, and then just far enough to show it.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun StableScroll(content: @Composable () -> Unit) {
+    val spec = androidx.compose.runtime.remember {
+        object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                val end = offset + size
+                return when {
+                    offset >= 0f && end <= containerSize -> 0f
+                    offset < 0f -> offset - 24f
+                    else -> (end - containerSize + 24f).coerceAtMost(offset)
+                }
+            }
+        }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides spec) { content() }
+}

@@ -127,7 +127,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var dur by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
     var buffering by remember { mutableStateOf(true) }
-    var controls by remember { mutableStateOf(true) }
+    var controls by remember { mutableStateOf(false) }
+    var started by remember { mutableStateOf(false) } // first frame playing: hides the loading splash
+    var engineKind by remember { mutableStateOf("") }
     var lastInput by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var panel by remember { mutableStateOf<String?>(null) } // audio | text
     var resize by remember { mutableIntStateOf(0) }
@@ -174,16 +176,30 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             }
             e.onEnded = { ended = true; controls = true; save() }
             engine = e
+            engineKind = kind
             e.start(req.url, req.headers, subs!!, startAt, langs)
             e.setResize(resize)
             onDispose {
                 if (e.duration > 0) Store.saveProgress(req, e.position, e.duration)
+                (e.view.parent as? android.view.ViewGroup)?.removeView(e.view)
                 e.release()
                 if (engine === e) engine = null
             }
         }
         val e = engine
-        if (e != null) AndroidView(factory = { e.view }, modifier = Modifier.fillMaxSize().background(Color.Black))
+        // The video surface lives in a container we own; a surface is moved, never added twice.
+        if (e != null && engineKind == kind) AndroidView(
+            factory = { c -> android.widget.FrameLayout(c) },
+            update = { box ->
+                val v = e.view
+                if (v.parent !== box) {
+                    (v.parent as? android.view.ViewGroup)?.removeView(v)
+                    box.removeAllViews()
+                    box.addView(v, android.widget.FrameLayout.LayoutParams(-1, -1))
+                }
+            },
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+        )
     }
 
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -205,6 +221,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 dur = e.duration
                 playing = e.isPlaying
                 buffering = e.isBuffering
+                if (!started && e.isPlaying && e.position > 300) started = true
             }
             if (++tick % 20 == 0) save()
             if (controls && panel == null && playing && System.currentTimeMillis() - lastInput > 4500) controls = false
@@ -239,7 +256,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     AKeyEvent.KEYCODE_DPAD_LEFT -> if (!controls) { seekBy(-10_000); controls = true; true } else false
                     AKeyEvent.KEYCODE_DPAD_RIGHT -> if (!controls) { seekBy(10_000); controls = true; true } else false
                     AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN ->
-                        if (!controls) { controls = true; true } else false
+                        if (!started) true else if (!controls) { controls = true; true } else false
                     else -> false
                 }
             }
@@ -249,9 +266,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 lastInput = System.currentTimeMillis(); controls = !controls; if (!controls) panel = null
             },
     ) {
-        if (buffering && error == null) CircularProgressIndicator(color = UiC.Accent, modifier = Modifier.align(Alignment.Center).size(56.dp))
+        if (started && buffering && error == null) CircularProgressIndicator(color = UiC.Accent, modifier = Modifier.align(Alignment.Center).size(56.dp))
+        if (!started) LoadingSplash(req, kind)
 
-        AnimatedVisibility(controls && error == null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(started && controls && error == null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Color(0x66000000))) {
                 // Top bar
                 Row(
@@ -337,6 +355,37 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     CtlChip(Icons.Default.PlayArrow, "External player") { PlayerLauncher.external(ctx, req) }
                     CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Back") { onExit() }
                 }
+            }
+        }
+    }
+}
+
+/** Full-screen artwork shown while the stream connects, instead of player buttons. */
+@Composable
+private fun LoadingSplash(req: PlayRequest, kind: String) {
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        coil.compose.AsyncImage(
+            req.background ?: req.poster, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF208080B), Color(0xB308080B), Color(0x4008080B)))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC08080B)))))
+        Column(Modifier.align(Alignment.CenterStart).padding(start = 64.dp, end = 64.dp).widthIn(max = 620.dp)) {
+            com.cinedeck.app.ui.Logo(18.sp)
+            Spacer(Modifier.height(28.dp))
+            Text(
+                req.name, color = Color.White, fontSize = 40.sp, lineHeight = 44.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                fontFamily = com.cinedeck.app.ui.Display, fontWeight = FontWeight.Bold,
+            )
+            req.season?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(epCode(it, req.episode) + (req.episodeTitle?.let { t -> "  ·  $t" } ?: ""), color = UiC.Text, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(28.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = UiC.Accent, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(14.dp))
+                Text(if (kind == "vlc") "Starting stream with VLC…" else "Starting stream…", color = UiC.Muted, fontSize = 15.sp)
             }
         }
     }

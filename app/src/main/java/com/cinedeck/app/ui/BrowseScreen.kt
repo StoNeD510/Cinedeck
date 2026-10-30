@@ -171,12 +171,11 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
     Column(Modifier.fillMaxSize()) {
         // ---- Fixed filter bar ----
         Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Browse", style = Heading, fontSize = 24.sp, modifier = Modifier.padding(end = 8.dp))
-            LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            LazyRow(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 item { DropChip("Show", typeLabel(type)) { picker = Picker.TYPE } }
                 if (forType.size > 1) item { DropChip("Catalog", cat?.def?.name ?: "—") { picker = Picker.CATALOG } }
                 if (genres.isNotEmpty()) item { DropChip(genreLabel, effectiveGenre ?: "All") { picker = Picker.GENRE } }

@@ -49,7 +49,7 @@ class UiFlowTest {
         waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
         tapPoster("movie")
         rule.onAllNodesWithText("Play").onFirst().performClick()
-        waitFor("streams screen") { texts().any { it == "Play with" } }
+        waitFor("streams screen") { texts().any { it.startsWith("No playable") || it.startsWith("Resolution") || it.startsWith("Sort by") } }
         println("STREAMS OK: " + texts().take(25))
     }
 
@@ -70,7 +70,7 @@ class UiFlowTest {
         println("REMOTE DETAILS OK")
         rule.onAllNodesWithText("Play").onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
         rule.onAllNodesWithText("Play").onFirst().performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionCenter) }
-        waitFor("streams via remote") { texts().any { it == "Play with" } }
+        waitFor("streams via remote") { texts().any { it.startsWith("No playable") || it.startsWith("Resolution") || it.startsWith("Sort by") } }
         println("REMOTE STREAMS OK")
     }
 

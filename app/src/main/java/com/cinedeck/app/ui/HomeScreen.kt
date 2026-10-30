@@ -125,6 +125,7 @@ fun HomeScreen(
     }
     val watchedIds = remember(data.progress) { data.progress.values.filter { it.watched && it.type == "movie" }.map { it.metaId }.toSet() }
 
+    StableScroll {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -190,6 +191,7 @@ fun HomeScreen(
         }
     }
 }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -202,7 +204,7 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
             if (!pager.isScrollInProgress && items.isNotEmpty()) pager.animateScrollToPage((pager.currentPage + 1) % items.size)
         }
     }
-    Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(300.dp) else Modifier.aspectRatio(0.82f))) {
+    Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(380.dp) else Modifier.aspectRatio(0.72f))) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             val m = items[page]
             Box(Modifier.fillMaxSize()) {
@@ -225,7 +227,7 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
                         modifier = Modifier.border(1.dp, C.Cyan, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
                     )
                     Spacer(Modifier.height(10.dp))
-                    if (m.logo != null) AsyncImage(m.logo, m.name, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 90.dp else 70.dp).widthIn(max = 300.dp))
+                    if (m.logo != null) AsyncImage(m.logo, m.name, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 72.dp else 60.dp).widthIn(max = 300.dp))
                     else Text(m.name, color = Color.White, fontFamily = Display, fontSize = if (wide) 44.sp else 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 46.sp else 32.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -238,7 +240,7 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
                     }
                     if (wide) m.description?.let {
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = C.Text, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Text(it, color = C.Text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -265,13 +267,13 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
 fun HeroButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     FocusBox(onClick = onClick, shape = RoundedCornerShape(10.dp), focusScale = 1.08f, modifier = modifier) {
         Row(
-            Modifier.background(if (primary) C.Accent else Color.Transparent)
+            Modifier.heightIn(min = 44.dp).background(if (primary) C.Accent else Color.Transparent)
                 .then(if (primary) Modifier else Modifier.border(1.dp, C.Line, RoundedCornerShape(10.dp)))
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
-            Text(label, color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(label, color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, softWrap = false)
         }
     }
 }
