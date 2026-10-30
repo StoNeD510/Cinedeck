@@ -156,6 +156,21 @@ class UiFlowTest {
         shot("year_picker")
     }
 
+    @Test fun themes() {
+        waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
+        rule.onAllNodesWithText("Settings").onFirst().performClick()
+        waitFor("settings") { texts().any { it == "ADDONS" } }
+        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Match the app icon to the theme"))
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Ocean").onFirst().performClick(); rule.waitForIdle()
+        shot("settings_ocean")
+        val pm = rule.activity.packageManager
+        val st = pm.getComponentEnabledSetting(android.content.ComponentName(rule.activity, "com.cinedeck.app.LauncherOcean"))
+        println("THEME ocean alias state=" + st)
+        rule.onAllNodesWithText("Home").onFirst().performClick()
+        shot("home_ocean")
+    }
+
     @Test fun seriesFlow() {
         waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
         tapPoster("series")

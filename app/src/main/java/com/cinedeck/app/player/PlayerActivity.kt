@@ -11,6 +11,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -133,7 +142,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var lastInput by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var panel by remember { mutableStateOf<String?>(null) } // audio | text
     var resize by remember { mutableIntStateOf(0) }
-    var seekDraft by remember { mutableFloatStateOf(-1f) }
+    var draftMs by remember { mutableLongStateOf(-1L) } // scrub preview position, -1 = not scrubbing
+    val scrubFocus = remember { FocusRequester() }
+    var focusScrub by remember { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -217,18 +228,32 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         while (true) {
             delay(500)
             engine?.let { e ->
-                if (seekDraft < 0) pos = e.position
+                if (draftMs < 0) pos = e.position
                 dur = e.duration
                 playing = e.isPlaying
                 buffering = e.isBuffering
                 if (!started && e.isPlaying && e.position > 300) started = true
             }
             if (++tick % 20 == 0) save()
-            if (controls && panel == null && playing && System.currentTimeMillis() - lastInput > 4500) controls = false
+            if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
         }
     }
     LaunchedEffect(controls) {
-        runCatching { if (controls) playFocus.requestFocus() else rootFocus.requestFocus() }
+        if (controls) kotlinx.coroutines.delay(50)
+        runCatching {
+            when {
+                controls && focusScrub -> { scrubFocus.requestFocus(); focusScrub = false }
+                controls -> playFocus.requestFocus()
+                else -> rootFocus.requestFocus()
+            }
+        }
+    }
+    fun commitScrub() {
+        if (draftMs >= 0) { engine?.seekTo(draftMs); pos = draftMs; draftMs = -1L }
+    }
+    // Commit a scrub shortly after the last move, so the picture catches up while you hold the arrow.
+    LaunchedEffect(draftMs) {
+        if (draftMs >= 0) { kotlinx.coroutines.delay(1200); commitScrub() }
     }
 
     fun toggle() { engine?.let { if (it.isPlaying) it.pause() else it.play() } }
@@ -253,8 +278,12 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     AKeyEvent.KEYCODE_MEDIA_PAUSE -> { engine?.pause(); true }
                     AKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(30_000); true }
                     AKeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-10_000); true }
-                    AKeyEvent.KEYCODE_DPAD_LEFT -> if (!controls) { seekBy(-10_000); controls = true; true } else false
-                    AKeyEvent.KEYCODE_DPAD_RIGHT -> if (!controls) { seekBy(10_000); controls = true; true } else false
+                    // With the controls hidden, left/right jump straight onto the timeline and start scrubbing.
+                    AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT -> if (started && !controls) {
+                        val d = if (ev.key.nativeKeyCode == AKeyEvent.KEYCODE_DPAD_LEFT) -10_000L else 10_000L
+                        draftMs = (pos + d).coerceIn(0, if (dur > 0) dur else Long.MAX_VALUE)
+                        focusScrub = true; controls = true; true
+                    } else false
                     AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN ->
                         if (!started) true else if (!controls) { controls = true; true } else false
                     else -> false
@@ -301,12 +330,12 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 20.dp, vertical = 12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmt(if (seekDraft >= 0) (seekDraft * dur).toLong() else pos), color = Color.White, fontSize = 13.sp)
-                        Slider(
-                            value = if (seekDraft >= 0) seekDraft else if (dur > 0) pos.toFloat() / dur else 0f,
-                            onValueChange = { seekDraft = it; lastInput = System.currentTimeMillis() },
-                            onValueChangeFinished = { engine?.seekTo((seekDraft * dur).toLong()); pos = (seekDraft * dur).toLong(); seekDraft = -1f },
-                            colors = SliderDefaults.colors(thumbColor = UiC.Accent, activeTrackColor = UiC.Accent, inactiveTrackColor = Color(0x55FFFFFF)),
+                        Text(fmt(if (draftMs >= 0) draftMs else pos), color = Color.White, fontSize = 13.sp)
+                        ScrubBar(
+                            pos = pos, dur = dur, draftMs = draftMs,
+                            onDraft = { draftMs = it; lastInput = System.currentTimeMillis() },
+                            onCommit = { commitScrub() },
+                            focus = scrubFocus,
                             modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                         )
                         Text(fmt(dur), color = Color.White, fontSize = 13.sp)
@@ -356,6 +385,81 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Back") { onExit() }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Timeline you can scrub. Remote: focus it, then hold left/right (it speeds up the longer you hold),
+ * press OK to jump right away or just let go. Touch: tap or drag.
+ */
+@Composable
+private fun ScrubBar(
+    pos: Long, dur: Long, draftMs: Long,
+    onDraft: (Long) -> Unit, onCommit: () -> Unit,
+    focus: FocusRequester, modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    var widthPx by remember { mutableIntStateOf(1) }
+    val shown = if (draftMs >= 0) draftMs else pos
+    val frac = if (dur > 0) (shown.toFloat() / dur).coerceIn(0f, 1f) else 0f
+    val playedFrac = if (dur > 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
+    fun fromX(x: Float) = if (dur > 0) (x / widthPx).coerceIn(0f, 1f).let { (it * dur).toLong() } else 0L
+    Box(
+        modifier
+            .height(44.dp)
+            .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+            .focusRequester(focus)
+            .onFocusChanged { focused = it.isFocused; if (!it.isFocused) onCommit() }
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown || dur <= 0) return@onKeyEvent false
+                val repeat = ev.nativeKeyEvent.repeatCount
+                // 10s taps; holding speeds up to 30s, 1 min, then 2% of the runtime per step.
+                val step = when {
+                    repeat < 4 -> 10_000L
+                    repeat < 12 -> 30_000L
+                    repeat < 24 -> 60_000L
+                    else -> maxOf(120_000L, dur / 50)
+                }
+                val base = if (draftMs >= 0) draftMs else pos
+                when (ev.key.nativeKeyCode) {
+                    AKeyEvent.KEYCODE_DPAD_LEFT -> { onDraft((base - step).coerceIn(0, dur)); true }
+                    AKeyEvent.KEYCODE_DPAD_RIGHT -> { onDraft((base + step).coerceIn(0, dur)); true }
+                    AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER -> { onCommit(); true }
+                    else -> false
+                }
+            }
+            .focusable()
+            .pointerInput(dur, widthPx) {
+                detectTapGestures { o -> onDraft(fromX(o.x)); onCommit() }
+            }
+            .pointerInput(dur, widthPx) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> onDraft(fromX(o.x)) },
+                    onDragEnd = { onCommit() },
+                    onHorizontalDrag = { ch, _ -> onDraft(fromX(ch.position.x)) },
+                )
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val track = if (focused) 8.dp else 5.dp
+        Box(Modifier.fillMaxWidth().height(track).clip(RoundedCornerShape(50)).background(Color(0x55FFFFFF)))
+        Box(Modifier.fillMaxWidth(playedFrac).height(track).clip(RoundedCornerShape(50)).background(UiC.Accent.copy(alpha = if (draftMs >= 0) 0.45f else 1f)))
+        if (draftMs >= 0) Box(Modifier.fillMaxWidth(frac).height(track).clip(RoundedCornerShape(50)).background(UiC.Accent))
+        // Thumb + time bubble while scrubbing
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val x = maxWidth * frac
+            val thumb = if (focused) 22.dp else 14.dp
+            Box(
+                Modifier.offset(x = x - thumb / 2).size(thumb).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(if (focused) Color.White else UiC.Accent)
+                    .then(if (focused) Modifier.border(4.dp, UiC.Accent, androidx.compose.foundation.shape.CircleShape) else Modifier),
+            )
+            if (draftMs >= 0) Text(
+                fmt(draftMs), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.offset(x = (x - 34.dp).coerceIn(0.dp, maxWidth - 68.dp), y = (-34).dp)
+                    .background(UiC.Accent, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+            )
         }
     }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-theme launcher icon backgrounds. -->
+<resources>
+    <color name="icon_bg_neon">#08080B</color>
+    <color name="icon_bg_gold">#0A0C12</color>
+    <color name="icon_bg_coral">#111214</color>
+    <color name="icon_bg_ocean">#070B12</color>
+    <color name="icon_bg_emerald">#07100C</color>
+    <color name="icon_bg_violet">#0B0912</color>
+</resources>

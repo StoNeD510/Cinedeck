@@ -2,7 +2,10 @@ package com.cinedeck.app.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -176,7 +179,35 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
         // ---------- Appearance ----------
         item { SettingsHeader("APPEARANCE") }
         item {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Theme", color = C.Text, fontSize = 14.sp)
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)) {
+                    items(Palettes.size) { i ->
+                        val p = Palettes[i]
+                        ThemeSwatch(p, selected = data.settings.theme == p.id) {
+                            Store.updateSettings { it.copy(theme = p.id) }
+                            if (data.settings.themeIcon) com.cinedeck.app.IconSwitcher.apply(ctx, p.id)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Match the app icon to the theme", color = C.Text, fontSize = 14.sp)
+                        Text("The launcher icon and TV banner change too. It can take a few seconds to update, and the TV may move ReelDJ in your apps row.", color = C.Muted, fontSize = 12.sp)
+                    }
+                    Switch(
+                        data.settings.themeIcon,
+                        { v ->
+                            Store.updateSettings { it.copy(themeIcon = v) }
+                            com.cinedeck.app.IconSwitcher.apply(ctx, if (v) data.settings.theme else "neon")
+                        },
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.White),
+                    )
+                }
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Navigation bar (TV and tablets)", color = C.Text, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("Side", data.settings.navPosition != "top") { Store.updateSettings { it.copy(navPosition = "side") } }
@@ -200,7 +231,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                     Text("Load subtitles from addons", color = C.Text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Switch(
                         data.settings.autoSubtitles, { v -> Store.updateSettings { it.copy(autoSubtitles = v) } },
-                        colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.Black),
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.White),
                     )
                 }
                 RemoteTextField(langs, { langs = it; Store.updateSettings { s -> s.copy(subtitleLangs = it) } }, "Subtitle languages (e.g. eng, spa, tgl)")
@@ -218,6 +249,34 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
             }
         }
         item { Text("ReelDJ ${com.cinedeck.app.BuildConfig.VERSION_NAME}", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
+    }
+}
+
+/** A theme choice: mini icon (EQ bars in the theme colors) + name. */
+@Composable
+private fun ThemeSwatch(p: Palette, selected: Boolean, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(14.dp), focusScale = 1.06f) { f ->
+        Column(
+            Modifier.width(132.dp).background(if (selected) C.Surface2 else C.Surface)
+                .border(2.dp, if (selected) p.accent else Color.Transparent, RoundedCornerShape(14.dp)).padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                Modifier.size(64.dp).background(p.bg, RoundedCornerShape(16.dp)),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(0.4f to p.accent, 0.75f to p.second, 0f to Color.White, 0.85f to p.second, 0.5f to p.accent).forEach { (h, c) ->
+                    if (h == 0f) androidx.compose.foundation.Canvas(Modifier.size(10.dp, 12.dp)) {
+                        drawPath(androidx.compose.ui.graphics.Path().apply { moveTo(0f, 0f); lineTo(size.width, size.height / 2); lineTo(0f, size.height); close() }, c)
+                    } else Box(Modifier.size(5.dp, 40.dp * h).background(c, RoundedCornerShape(50)))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(p.name, color = if (selected || f) C.Text else C.Muted, fontSize = 12.sp, fontFamily = Display, fontWeight = FontWeight.Bold, maxLines = 1)
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(p.accent, p.second, p.surface2).forEach { Box(Modifier.size(12.dp).background(it, RoundedCornerShape(50))) }
+            }
+        }
     }
 }
 

@@ -196,7 +196,9 @@ data class Settings(
     val rdToken: String = "",
     val navPosition: String = "top", // side | top (TV and tablets)
     val uiVersion: Int = 0,
-    val browseDense: Boolean = true, // Browse grid: 8 across on TV (true) or 6 (false)
+    val browseDense: Boolean = true,
+    val theme: String = "neon",
+    val themeIcon: Boolean = true, // switch the launcher icon with the theme // Browse grid: 8 across on TV (true) or 6 (false)
     val streamSort: String = "quality", // quality | seeders | size
 )
 

@@ -29,6 +29,7 @@ object Store {
         if (_data.value.settings.uiVersion < 1) {
             _data.value = _data.value.copy(settings = _data.value.settings.copy(navPosition = "top", uiVersion = 1))
         }
+        com.cinedeck.app.ui.ThemeState.palette = com.cinedeck.app.ui.paletteFor(_data.value.settings.theme)
         scope.launch {
             for (s in saveSignal) {
                 val text = AppJson.encodeToString(AppData.serializer(), _data.value)
@@ -41,6 +42,7 @@ object Store {
 
     fun edit(block: (AppData) -> AppData) {
         _data.update(block)
+        com.cinedeck.app.ui.ThemeState.palette = com.cinedeck.app.ui.paletteFor(_data.value.settings.theme)
         saveSignal.trySend(Unit)
     }
 
