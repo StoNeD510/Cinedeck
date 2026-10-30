@@ -23,7 +23,13 @@ object RealDebrid {
         val generated: String? = null,
     )
 
-    private fun auth(token: String) = mapOf("Authorization" to "Bearer ${token.trim()}")
+    /** Keep only the token itself: drops spaces, line breaks, invisible characters and any label pasted with it. */
+    fun clean(raw: String): String {
+        val parts = raw.split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
+        return parts.maxByOrNull { it.length } ?: ""
+    }
+
+    private fun auth(token: String) = mapOf("Authorization" to "Bearer ${clean(token)}")
 
     suspend fun user(token: String): User =
         AppJson.decodeFromString(User.serializer(), Http.get("$API/user", auth(token)))

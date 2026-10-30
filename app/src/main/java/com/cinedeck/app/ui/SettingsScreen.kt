@@ -158,12 +158,18 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     HeroButton("Save & check", null, primary = true) {
-                        Store.updateSettings { it.copy(rdToken = token.trim()) }
+                        val clean = RealDebrid.clean(token)
+                        token = clean
+                        Store.updateSettings { it.copy(rdToken = clean) }
                         rdStatus = "Checking…"
                         scope.launch {
-                            rdStatus = runCatching { RealDebrid.user(token) }.fold(
+                            rdStatus = runCatching { RealDebrid.user(clean) }.fold(
                                 { u -> "Signed in as ${u.username} · ${u.type}" + (u.expiration?.let { " until ${it.take(10)}" } ?: "") },
-                                { "Token didn't work: ${it.message}" },
+                                { e ->
+                                    if (e.message?.contains("401") == true)
+                                        "Real-Debrid rejected this token (${clean.length} characters; a valid one is usually 52). Copy it again from the API token page, and if you pressed Reset there, use the new one."
+                                    else "Couldn't reach Real-Debrid: ${e.message}"
+                                },
                             )
                         }
                     }
@@ -209,7 +215,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 }
             }
         }
-        item { Text("CineDeck 0.1.0", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
+        item { Text("CineDeck 0.1.1", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
     }
 }
 
