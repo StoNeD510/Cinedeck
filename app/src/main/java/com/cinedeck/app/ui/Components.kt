@@ -82,9 +82,9 @@ private fun Modifier.combinedClick(src: MutableInteractionSource, onClick: () ->
 fun posterWidth(): Dp = if (LocalIsTv.current) 140.dp else if (LocalWide.current) 130.dp else 112.dp
 
 @Composable
-fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier) {
+fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f) {
     Column(modifier.then(if (width != null) Modifier.width(width) else Modifier)) {
-        FocusBox(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
+        FocusBox(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale) {
             AsyncImage(
                 model = meta.poster, contentDescription = meta.name, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(C.Surface2),
@@ -131,10 +131,20 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null) {
     }
 }
 
+/** Posters across the visible width: 6 on TV/tablet, 3 on a phone. */
+@Composable
+fun postersAcross(): Int = if (LocalWide.current) 6 else 3
+
 @Composable
 fun PosterRow(items: List<Meta>, onOpen: (Meta) -> Unit, watchedIds: Set<String> = emptySet()) {
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, watched = m.id in watchedIds) }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val n = postersAcross()
+        val gap = 10.dp
+        val peek = 18.dp // a sliver of the next poster shows the row scrolls
+        val w = (maxWidth - 16.dp - gap * n - peek) / n
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, width = w, watched = m.id in watchedIds, focusScale = 1.05f) }
+        }
     }
 }
 

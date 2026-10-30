@@ -13,8 +13,8 @@ android {
         applicationId = "com.cinedeck.app"
         minSdk = 21
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
     }
 
     signingConfigs {
@@ -54,7 +54,13 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { t ->
+            System.getenv("ROBOLECTRIC_REPO")?.let { t.systemProperty("robolectric.dependency.repo.url", it) }
+        }
+    }
     packaging {
         jniLibs { useLegacyPackaging = true }
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -89,4 +95,8 @@ dependencies {
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test:core:1.6.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

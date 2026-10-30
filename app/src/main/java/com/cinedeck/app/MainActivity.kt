@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -80,6 +81,7 @@ class MainActivity : ComponentActivity() {
                     val wide = tv || maxWidth >= 720.dp
                     CompositionLocalProvider(LocalIsTv provides tv, LocalWide provides wide) {
                         AppRoot(wide)
+                        CrashReport()
                     }
                 }
             }
@@ -127,6 +129,29 @@ object Routes {
     fun streams(type: String, metaId: String, videoId: String) = "streams/$type/${Uri.encode(metaId)}/${Uri.encode(videoId)}"
     fun browse(catalogKey: String? = null, type: String? = null) =
         "browse?key=${Uri.encode(catalogKey ?: "")}&type=${type ?: ""}"
+}
+
+@Composable
+private fun CrashReport() {
+    var report by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(CrashLog.read()) }
+    val r = report ?: return
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { CrashLog.clear(); report = null },
+        containerColor = C.Surface,
+        title = { Text("CineDeck closed unexpectedly last time", color = C.Text) },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.height(320.dp)) {
+                item {
+                    Text("Take a photo of this screen and send it over so the bug can be fixed.", color = C.Muted, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(r, color = C.Text, fontSize = 11.sp, lineHeight = 14.sp)
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { CrashLog.clear(); report = null }) { Text("Dismiss", color = C.Accent) }
+        },
+    )
 }
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)

@@ -56,9 +56,9 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
         .groupBy { it.metaId }.map { (_, v) -> v.maxBy { it.updatedAt } }.sortedByDescending { it.updatedAt }
 
     LazyVerticalGrid(
-        columns = if (tab == "list") GridCells.Adaptive(minSize) else GridCells.Fixed(1),
+        columns = if (tab == "list") GridCells.Fixed(postersAcross()) else GridCells.Fixed(1),
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(if (tab == "list") 16.dp else 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(if (tab == "list") 16.dp else 8.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

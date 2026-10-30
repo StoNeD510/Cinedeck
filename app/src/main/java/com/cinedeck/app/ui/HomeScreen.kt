@@ -201,7 +201,7 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
             if (!pager.isScrollInProgress && items.isNotEmpty()) pager.animateScrollToPage((pager.currentPage + 1) % items.size)
         }
     }
-    Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(400.dp) else Modifier.aspectRatio(0.82f))) {
+    Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(300.dp) else Modifier.aspectRatio(0.82f))) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             val m = items[page]
             Box(Modifier.fillMaxSize()) {

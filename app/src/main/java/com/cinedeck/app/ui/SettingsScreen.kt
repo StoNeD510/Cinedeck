@@ -215,7 +215,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 }
             }
         }
-        item { Text("CineDeck 0.1.1", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
+        item { Text("CineDeck 0.1.2", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
     }
 }
 

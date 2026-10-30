@@ -70,8 +70,8 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
 
     val minSize = if (LocalIsTv.current) 140.dp else if (LocalWide.current) 130.dp else 105.dp
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize), state = grid, modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
+        columns = GridCells.Fixed(postersAcross()), state = grid, modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

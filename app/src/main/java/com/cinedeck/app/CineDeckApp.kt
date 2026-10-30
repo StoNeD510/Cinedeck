@@ -18,6 +18,7 @@ class CineDeckApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         Store.init(this)
         scope.launch { Addons.refreshManifests(force = true) }
     }
