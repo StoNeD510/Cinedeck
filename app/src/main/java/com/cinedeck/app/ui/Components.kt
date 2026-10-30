@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -186,3 +187,17 @@ val BottomFade = Brush.verticalGradient(listOf(Color.Transparent, Color(0x990000
 val LeftFade = Brush.horizontalGradient(listOf(C.Bg, Color(0xCC0B0D10), Color.Transparent))
 
 fun epCode(s: Int?, e: Int?): String = if (s == null) "" else "S%02dE%02d".format(s, e ?: 0)
+
+/** On TV, put the remote's focus on this element when it first appears. */
+@Composable
+fun Modifier.tvInitialFocus(key: Any? = Unit): Modifier {
+    if (!LocalIsTv.current) return this
+    val req = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(key) {
+        repeat(10) {
+            kotlinx.coroutines.delay(120)
+            if (runCatching { req.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
+    return this.focusRequester(req)
+}

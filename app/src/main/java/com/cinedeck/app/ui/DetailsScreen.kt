@@ -75,8 +75,10 @@ fun DetailsScreen(type: String, id: String, onPlay: (String, String, String) -> 
 
 @Composable
 fun BackBar(onBack: () -> Unit, title: String? = null) {
+    val tv = LocalIsTv.current
     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        FocusBox(onClick = onBack, shape = RoundedCornerShape(50)) {
+        // TV remotes have a Back button; an on-screen one just steals the first OK press.
+        if (!tv) FocusBox(onClick = onBack, shape = RoundedCornerShape(50)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White, modifier = Modifier.background(Color(0x66000000)).padding(8.dp).size(24.dp))
         }
         title?.let { Text(it, color = C.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -124,10 +126,10 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
                     if (m.type == "series") {
                         if (next != null) {
                             val partial = (data.progress[next.id]?.position ?: 0) > 0
-                            HeroButton("${if (partial) "Resume" else "Play"} ${epCode(next.season, next.ep)}", Icons.Default.PlayArrow, primary = true) { onPlay(m.type, m.id, next.id) }
+                            HeroButton("${if (partial) "Resume" else "Play"} ${epCode(next.season, next.ep)}", Icons.Default.PlayArrow, primary = true, modifier = Modifier.tvInitialFocus(m.id)) { onPlay(m.type, m.id, next.id) }
                         }
                     } else {
-                        HeroButton(if ((movieProg?.position ?: 0) > 0) "Resume" else "Play", Icons.Default.PlayArrow, primary = true) { onPlay(m.type, m.id, m.id) }
+                        HeroButton(if ((movieProg?.position ?: 0) > 0) "Resume" else "Play", Icons.Default.PlayArrow, primary = true, modifier = Modifier.tvInitialFocus(m.id)) { onPlay(m.type, m.id, m.id) }
                         val w = movieProg?.watched == true
                         HeroButton(if (w) "Watched" else "Mark watched", if (w) Icons.Default.CheckCircle else Icons.Default.Check) { Store.setWatched(m, emptyList(), !w) }
                     }

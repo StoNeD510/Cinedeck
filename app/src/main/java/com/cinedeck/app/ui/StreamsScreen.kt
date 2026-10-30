@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
@@ -134,7 +135,7 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
                     },
                 )
             }
-            else -> items(shown, key = { it.addonName + it.stream.playableUrl + it.stream.title }) { r -> StreamRow(r, ::play) }
+            else -> itemsIndexed(shown, key = { _, r -> r.addonName + r.stream.playableUrl + r.stream.title }) { i, r -> StreamRow(r, ::play, if (i == 0) Modifier.tvInitialFocus(shown.size) else Modifier) }
         }
         if (errors.isNotEmpty()) item {
             Text(
@@ -146,8 +147,8 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
 }
 
 @Composable
-private fun StreamRow(r: Row_, onPlay: (Row_) -> Unit) {
-    FocusBox(onClick = { onPlay(r) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth(), focusScale = 1.02f) {
+private fun StreamRow(r: Row_, onPlay: (Row_) -> Unit, focus: Modifier = Modifier) {
+    FocusBox(onClick = { onPlay(r) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().then(focus), focusScale = 1.02f) {
         Row(Modifier.fillMaxWidth().background(C.Surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(r.info.resolution ?: "—", color = if (r.info.rank >= 3) C.Accent else C.Text, fontSize = 17.sp, fontWeight = FontWeight.Black)

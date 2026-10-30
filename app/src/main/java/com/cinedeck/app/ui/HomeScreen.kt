@@ -255,8 +255,8 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
 }
 
 @Composable
-fun HeroButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, primary: Boolean = false, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(8.dp), focusScale = 1.08f) {
+fun HeroButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(8.dp), focusScale = 1.08f, modifier = modifier) {
         Row(
             Modifier.background(if (primary) C.Accent else Color(0x33FFFFFF)).padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,

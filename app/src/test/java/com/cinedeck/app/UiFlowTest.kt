@@ -74,6 +74,47 @@ class UiFlowTest {
         println("REMOTE STREAMS OK")
     }
 
+    private fun key(code: Int) {
+        val a = rule.activity
+        rule.runOnUiThread {
+            val root = a.window.decorView.rootView
+            root.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code))
+            root.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, code))
+        }
+        rule.waitForIdle(); Thread.sleep(150)
+    }
+
+    private fun focusedText(): String {
+        val n = rule.onAllNodes(isFocused(), useUnmergedTree = true).fetchSemanticsNodes().firstOrNull() ?: return "<none>"
+        fun collect(x: androidx.compose.ui.semantics.SemanticsNode): List<String> =
+            listOfNotNull(
+                x.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString(),
+                x.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null }?.joinToString(),
+            ) + x.children.flatMap { collect(it) }
+        return collect(n).joinToString(" | ").take(80)
+    }
+
+    @Test fun dpadFlow() {
+        waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
+        Thread.sleep(2000); rule.waitForIdle()
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        rule.runOnUiThread { rule.activity.window.decorView.requestFocus() }
+        rule.waitForIdle()
+        println("touchMode=" + rule.activity.window.decorView.isInTouchMode)
+        val names = HomeData.rows.value!!.flatMap { r -> r.items.map { it.name } }.toSet()
+        for (i in 1..14) {
+            key(android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+            val f = focusedText()
+            println("DPAD step $i focus: $f")
+            if (names.any { f.startsWith(it) }) break
+        }
+        println("PRESS OK on: " + focusedText())
+        key(android.view.KeyEvent.KEYCODE_DPAD_CENTER)
+        for (t in 1..20) { Thread.sleep(300); rule.waitForIdle() }
+        println("DPAD AFTER OK: " + texts().take(14))
+        println("DPAD ON DETAILS? " + onDetails() + " focus=" + focusedText())
+    }
+
     @Test fun seriesFlow() {
         waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
         tapPoster("series")
