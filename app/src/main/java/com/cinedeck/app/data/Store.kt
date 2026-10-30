@@ -25,6 +25,10 @@ object Store {
             runCatching { AppJson.decodeFromString<AppData>(file.readText()) }
                 .onSuccess { _data.value = it.copy(addons = it.addons.ifEmpty { DefaultAddons }) }
         }
+        // ReelDJ restyle: the Neon Booth layout uses the top bar, so switch once; the setting still works after.
+        if (_data.value.settings.uiVersion < 1) {
+            _data.value = _data.value.copy(settings = _data.value.settings.copy(navPosition = "top", uiVersion = 1))
+        }
         scope.launch {
             for (s in saveSignal) {
                 val text = AppJson.encodeToString(AppData.serializer(), _data.value)

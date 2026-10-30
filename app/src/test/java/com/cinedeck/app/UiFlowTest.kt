@@ -117,19 +117,43 @@ class UiFlowTest {
 
     private fun posters() = rule.onAllNodes(hasClickAction() and hasAnyDescendant(hasContentDescription("", substring = true)), useUnmergedTree = true).fetchSemanticsNodes().size
 
+    private fun shot(name: String) {
+        Thread.sleep(2500); rule.waitForIdle()
+        var bmp: android.graphics.Bitmap? = null
+        rule.runOnUiThread {
+            val v = rule.activity.window.decorView
+            bmp = android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888)
+            v.draw(android.graphics.Canvas(bmp!!))
+        }
+        val out = bmp!!
+        java.io.File(System.getProperty("shotDir") ?: "/tmp").mkdirs()
+        java.io.FileOutputStream(java.io.File(System.getProperty("shotDir") ?: "/tmp", "$name.png")).use { out.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        println("SHOT $name")
+    }
+
+    private fun pick(chip: String, option: String) {
+        rule.onAllNodesWithText(chip, substring = true).onFirst().performClick(); rule.waitForIdle(); Thread.sleep(300)
+        waitFor("picker for $chip", 8_000) { rule.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty() }
+        val opt = rule.onAllNodes(hasClickAction() and hasAnyDescendant(hasText(option)) and hasAnyAncestor(isDialog()), useUnmergedTree = true).onFirst()
+        println("OPTION bounds=" + opt.fetchSemanticsNode().boundsInRoot)
+        opt.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); rule.waitForIdle()
+    }
+
     @Test fun browseFilters() {
         waitFor("home rows") { !HomeData.rows.value.isNullOrEmpty() }
+        shot("home")
         rule.onAllNodesWithText("Browse").onFirst().performClick()
-        waitFor("movies grid") { posters() > 12 }
-        println("BROWSE movies posters=" + posters() + " summary=" + texts().firstOrNull { it.contains("·") })
-        val steps = listOf("TV Shows", "Comedy", "Movies", "Drama", "TV Shows", "All")
-        for (step in steps) {
-            rule.onAllNodesWithText("Filters").onFirst().performClick(); rule.waitForIdle()
-            rule.onAllNodesWithText(step).onLast().performClick()
-            waitFor("after $step") { posters() > 6 && texts().any { it.contains("·") && (step == "All" || it.contains(step)) } }
-            println("BROWSE $step -> posters=" + posters() + " summary=" + texts().first { it.contains("  ·  ") })
-            if (texts().any { it == "Done" }) { rule.onAllNodesWithText("Done").onFirst().performClick(); rule.waitForIdle() }
+        waitFor("movies grid") { posters() >= 6 }
+        shot("browse")
+        val steps = listOf("Show" to "TV Shows", "Genre" to "Comedy", "Show" to "Movies", "Genre" to "Drama", "Catalog" to "New", "Year" to "2024")
+        for ((chip, opt) in steps) {
+            pick(chip, opt)
+            waitFor("after $opt") { posters() >= 6 && texts().any { it.contains(opt) } }
+            println("BROWSE $chip=$opt -> posters=" + posters())
+            if (opt == "Comedy") shot("browse_comedy")
         }
+        rule.onAllNodesWithText("Year", substring = true).onFirst().performClick(); rule.waitForIdle()
+        shot("year_picker")
     }
 
     @Test fun seriesFlow() {

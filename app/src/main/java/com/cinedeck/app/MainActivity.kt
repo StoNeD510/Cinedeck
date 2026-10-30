@@ -140,7 +140,7 @@ private fun CrashReport() {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { CrashLog.clear(); report = null },
         containerColor = C.Surface,
-        title = { Text("CineDeck closed unexpectedly last time", color = C.Text) },
+        title = { Text("ReelDJ closed unexpectedly last time", color = C.Text) },
         text = {
             androidx.compose.foundation.lazy.LazyColumn(Modifier.height(320.dp)) {
                 item {
@@ -190,7 +190,7 @@ private fun AppRoot(wide: Boolean) {
         Row(Modifier.fillMaxSize().systemBarsPadding()) {
             if (isTopLevel) NavigationRail(containerColor = C.Bg, modifier = Modifier.fillMaxHeight()) {
                 Spacer(Modifier.height(12.dp))
-                Text("CineDeck", color = C.Accent, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+                Box(Modifier.padding(bottom = 14.dp)) { com.cinedeck.app.ui.EqMark(26.dp) }
                 tabs.forEach { t ->
                     NavigationRailItem(
                         selected = route == t.route, onClick = { go(t.route) },
@@ -233,7 +233,7 @@ private fun TopTabs(route: String, onGo: (String) -> Unit) {
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
     ) {
-        Text("CineDeck", color = C.Accent, fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, modifier = Modifier.padding(end = 18.dp))
+        Box(Modifier.padding(end = 22.dp)) { com.cinedeck.app.ui.Logo(22.sp) }
         tabs.forEach { t ->
             val sel = route == t.route
             com.cinedeck.app.ui.FocusBox(onClick = { onGo(t.route) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50), focusScale = 1.05f) {
@@ -241,9 +241,11 @@ private fun TopTabs(route: String, onGo: (String) -> Unit) {
                     Modifier.background(if (sel) C.Surface2 else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
-                    Icon(t.icon, null, tint = if (sel) C.Accent else C.Muted, modifier = Modifier.size(20.dp))
+                    if (sel) { Box(Modifier.size(6.dp).background(C.Accent, androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.size(8.dp)) }
+                    Icon(t.icon, null, tint = if (sel) C.Text else C.Muted, modifier = Modifier.size(19.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text(t.label, color = if (sel) C.Accent else C.Text, fontSize = 14.sp)
+                    Text(t.label, color = if (sel) C.Text else C.Muted, fontSize = 15.sp, fontFamily = com.cinedeck.app.ui.Display,
+                        fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium)
                 }
             }
         }

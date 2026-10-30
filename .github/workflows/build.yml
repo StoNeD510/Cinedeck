@@ -25,13 +25,13 @@ jobs:
         run: |
           mkdir dist
           for f in app/build/outputs/apk/release/*.apk; do
-            n=$(basename "$f" | sed 's/^app-/CineDeck-/; s/-release//')
+            n=$(basename "$f" | sed 's/^app-/ReelDJ-/; s/-release//')
             cp "$f" "dist/$n"
           done
           ls -la dist
       - uses: actions/upload-artifact@v4
         with:
-          name: CineDeck-apks
+          name: ReelDJ-apks
           path: dist/*.apk
       - name: Read version
         id: ver
@@ -40,7 +40,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.name }}
-          name: CineDeck ${{ steps.ver.outputs.name }}
+          name: ReelDJ ${{ steps.ver.outputs.name }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           files: dist/*.apk

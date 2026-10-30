@@ -2,6 +2,7 @@ package com.cinedeck.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -127,7 +128,7 @@ fun HomeScreen(
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!wide) Text("CineDeck", color = C.Accent, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 12.dp))
+                if (!wide) Box(Modifier.padding(end = 12.dp)) { Logo(20.sp, mark = false) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("All", filter == "all") { filter = "all" }
                     Pill("Movies", filter == "movie") { filter = "movie" }
@@ -153,7 +154,7 @@ fun HomeScreen(
                         WideCard(
                             image = c.image ?: c.poster, title = c.name,
                             subtitle = if (c.season != null) "${epCode(c.season, c.episode)} · ${c.episodeTitle ?: ""}" else null,
-                            badge = if (c.isUpNext) "UP NEXT" else null, progress = c.fraction,
+                            badge = if (c.isUpNext) "UP NEXT" else null, badgeColor = C.Cyan, progress = c.fraction,
                             onClick = { onPlay(c.type, c.metaId, c.videoId) },
                             onLongClick = { onOpen(c.type, c.metaId) },
                         )
@@ -218,8 +219,14 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
                         .then(if (wide) Modifier.widthIn(max = 520.dp) else Modifier.fillMaxWidth()),
                     horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
                 ) {
+                    Text(
+                        if (m.type == "series") "FEATURED SERIES" else "FEATURED", color = C.Cyan, fontSize = 11.sp, fontFamily = Display, fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        modifier = Modifier.border(1.dp, C.Cyan, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                    Spacer(Modifier.height(10.dp))
                     if (m.logo != null) AsyncImage(m.logo, m.name, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 90.dp else 70.dp).widthIn(max = 300.dp))
-                    else Text(m.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                    else Text(m.name, color = Color.White, fontFamily = Display, fontSize = if (wide) 44.sp else 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 46.sp else 32.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         m.imdbRating?.let {
@@ -256,13 +263,15 @@ private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (S
 
 @Composable
 fun HeroButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(8.dp), focusScale = 1.08f, modifier = modifier) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(10.dp), focusScale = 1.08f, modifier = modifier) {
         Row(
-            Modifier.background(if (primary) C.Accent else Color(0x33FFFFFF)).padding(horizontal = 16.dp, vertical = 9.dp),
+            Modifier.background(if (primary) C.Accent else Color.Transparent)
+                .then(if (primary) Modifier else Modifier.border(1.dp, C.Line, RoundedCornerShape(10.dp)))
+                .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) { Icon(icon, null, tint = if (primary) Color.Black else Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
-            Text(label, color = if (primary) Color.Black else Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            if (icon != null) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
+            Text(label, color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
     }
 }
@@ -278,9 +287,9 @@ fun WideCard(
             AsyncImage(image, title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(C.Surface2))
             Box(Modifier.fillMaxSize().background(BottomFade))
             Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(36.dp).background(Color(0x88000000), RoundedCornerShape(50)).padding(4.dp))
-            badge?.let { Box(Modifier.align(Alignment.TopStart).padding(6.dp)) { Tag(it, badgeColor, if (badgeColor == C.Accent) Color.Black else Color.White) } }
+            badge?.let { Box(Modifier.align(Alignment.TopStart).padding(6.dp)) { Tag(it, badgeColor, if (badgeColor == C.Cyan) C.Bg else Color.White) } }
             if (progress > 0f) LinearProgressIndicator(
-                progress = { progress }, color = C.Accent, trackColor = Color(0x66000000),
+                progress = { progress }, color = C.Cyan, trackColor = Color(0x66000000),
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
             )
         }

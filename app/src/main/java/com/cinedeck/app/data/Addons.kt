@@ -23,7 +23,7 @@ object Http {
         .build()
 
     suspend fun get(url: String, headers: Map<String, String> = emptyMap()): String = withContext(Dispatchers.IO) {
-        val b = Request.Builder().url(url).header("User-Agent", "CineDeck/0.1")
+        val b = Request.Builder().url(url).header("User-Agent", "ReelDJ/0.3")
         headers.forEach { (k, v) -> b.header(k, v) }
         client.newCall(b.build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("HTTP ${r.code} for $url")

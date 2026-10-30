@@ -77,7 +77,7 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Episodes", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("Episodes", style = Heading, fontSize = 24.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("Coming up", mode == "upcoming") { mode = "upcoming" }
                     Pill("Recently aired", mode == "recent") { mode = "recent" }

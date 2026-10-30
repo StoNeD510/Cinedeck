@@ -137,7 +137,7 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
                 }
                 if (m.type == "movie" && movieProg != null && movieProg.fraction > 0f && !movieProg.watched) {
                     Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator(progress = { movieProg.fraction }, color = C.Accent, trackColor = C.Surface2, modifier = Modifier.fillMaxWidth(0.5f).height(3.dp))
+                    LinearProgressIndicator(progress = { movieProg.fraction }, color = C.Cyan, trackColor = C.Surface2, modifier = Modifier.fillMaxWidth(0.5f).height(3.dp))
                 }
                 if (m.allGenres.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
@@ -182,7 +182,7 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
                     ) {
                         AsyncImage(v.thumbnail ?: m.background, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(C.Surface2))
                         if (aired) Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(30.dp).background(Color(0x88000000), RoundedCornerShape(50)).padding(3.dp))
-                        if (p != null && !p.watched && p.fraction > 0f) LinearProgressIndicator(progress = { p.fraction }, color = C.Accent, trackColor = Color(0x66000000), modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp))
+                        if (p != null && !p.watched && p.fraction > 0f) LinearProgressIndicator(progress = { p.fraction }, color = C.Cyan, trackColor = Color(0x66000000), modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {

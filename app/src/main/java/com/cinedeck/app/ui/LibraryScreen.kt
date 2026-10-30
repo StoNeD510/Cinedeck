@@ -62,7 +62,7 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("My Stuff", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("My Stuff", style = Heading, fontSize = 24.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("My List (${data.library.size})", tab == "list") { tab = "list" }
                     Pill("Watch History", tab == "history") { tab = "history" }
@@ -98,7 +98,7 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
                             )
                             if (!p.watched && p.fraction > 0f) {
                                 Spacer(Modifier.height(4.dp))
-                                LinearProgressIndicator(progress = { p.fraction }, color = C.Accent, trackColor = C.Surface2, modifier = Modifier.fillMaxWidth(0.7f).height(3.dp))
+                                LinearProgressIndicator(progress = { p.fraction }, color = C.Cyan, trackColor = C.Surface2, modifier = Modifier.fillMaxWidth(0.7f).height(3.dp))
                             }
                         }
                         if (p.watched && p.type == "movie") Icon(Icons.Default.CheckCircle, null, tint = C.Accent)

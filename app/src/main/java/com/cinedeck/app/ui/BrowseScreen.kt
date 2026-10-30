@@ -1,7 +1,8 @@
 package com.cinedeck.app.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,8 +22,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,7 +98,13 @@ private object BrowseCache {
 
 private fun typeLabel(t: String) = when (t) { "movie" -> "Movies"; "series" -> "TV Shows"; else -> t.replaceFirstChar { it.uppercase() } }
 
-/** One long scrollable page of everything in a catalog, loading more as you scroll. Filters stay tucked away. */
+/** Which filter's picker is open. */
+private enum class Picker { TYPE, CATALOG, GENRE }
+
+/**
+ * Browse: a fixed filter bar (type, catalog, genre/year, hide watched) above a grid that stays
+ * 6 across on TV. Changing a filter never leaves the grid; it just reloads under the bar.
+ */
 @Composable
 fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, String) -> Unit) {
     val data by Store.data.collectAsState()
@@ -106,11 +112,13 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
     var type by rememberSaveable { mutableStateOf(initialType.ifBlank { "movie" }) }
     var key by rememberSaveable { mutableStateOf(initialKey) }
     var genre by rememberSaveable { mutableStateOf<String?>(null) }
-    var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    var hideWatched by rememberSaveable { mutableStateOf(false) }
+    var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<Meta?>(null) }
+    val dense = data.settings.browseDense
+    val wideScreen = LocalWide.current
 
     val types = all.map { it.def.type }.distinct().sortedBy { when (it) { "movie" -> 0; "series" -> 1; else -> 2 } }
-    // Catalogs whose only required filter is genre can be browsed here.
     val forType = all.filter { c ->
         c.def.type == type &&
             c.def.extra.orEmpty().none { e -> e.isRequired && e.name != "genre" } &&
@@ -118,7 +126,8 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
     }
     val cat = forType.firstOrNull { it.key == key } ?: forType.firstOrNull { !it.def.requiresExtra() } ?: forType.firstOrNull()
     val genres = cat?.def?.genres().orEmpty()
-    // Keep the chosen genre only if this catalog offers it; required-genre catalogs fall back to their first option.
+    val isYear = genres.isNotEmpty() && genres.take(5).all { g -> g.all { it.isDigit() } }
+    val genreLabel = if (isYear) "Year" else "Genre"
     val effectiveGenre = when {
         genre != null && genre in genres -> genre
         cat?.def?.requires("genre") == true -> genres.firstOrNull()
@@ -131,92 +140,132 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
         grid.scrollToItem(0)
         if (pager?.items?.isEmpty() == true) pager.loadMore()
     }
-    // Load the next page whenever the end of the grid comes into view.
     LaunchedEffect(pager) {
         val p = pager ?: return@LaunchedEffect
         snapshotFlow {
             val last = grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= grid.layoutInfo.totalItemsCount - 12 && !p.loading && !p.done && p.error == null
+            last >= grid.layoutInfo.totalItemsCount - 18 && !p.loading && !p.done && p.error == null
         }.distinctUntilChanged().filter { it }.collect { p.loadMore() }
     }
 
     menuFor?.let { m -> TitleActions(m, onOpen = { onOpen(m.type, m.id) }, onDismiss = { menuFor = null }) }
     val watched = watchedTitleIds()
+    val list = pager?.items.orEmpty().let { l -> if (hideWatched) l.filter { it.id !in watched } else l }
+    // When hiding watched titles empties the screen, keep fetching.
+    LaunchedEffect(pager, hideWatched, list.size) {
+        if (hideWatched && list.size < 24 && pager != null && !pager.done && !pager.loading && pager.error == null) pager.loadMore()
+    }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(postersAcross()), state = grid, modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Browse", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black)
+    when (picker) {
+        Picker.TYPE -> OptionPicker("Show", types.map { it to typeLabel(it) }, type) { t -> if (t != null && t != type) { type = t; key = ""; genre = null }; picker = null }
+        Picker.CATALOG -> OptionPicker("Catalog", forType.map { it.key to (it.def.name ?: it.def.id) }, cat?.key) { k -> if (k != null) { key = k; genre = null }; picker = null }
+        Picker.GENRE -> OptionPicker(
+            genreLabel,
+            (if (cat?.def?.requires("genre") == true) emptyList() else listOf("" to "All")) + genres.map { it to it },
+            effectiveGenre ?: "",
+            columns = if (isYear) 8 else 5,
+        ) { g -> if (g != null) genre = g.ifEmpty { null }; picker = null }
+        null -> {}
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // ---- Fixed filter bar ----
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Browse", style = Heading, fontSize = 24.sp, modifier = Modifier.padding(end = 8.dp))
+            LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                item { DropChip("Show", typeLabel(type)) { picker = Picker.TYPE } }
+                if (forType.size > 1) item { DropChip("Catalog", cat?.def?.name ?: "—") { picker = Picker.CATALOG } }
+                if (genres.isNotEmpty()) item { DropChip(genreLabel, effectiveGenre ?: "All") { picker = Picker.GENRE } }
+                item { Pill(if (hideWatched) "Hiding watched" else "Hide watched", hideWatched) { hideWatched = !hideWatched } }
+                if (wideScreen) item { Pill(if (dense) "Compact grid" else "Large grid", false) { Store.updateSettings { it.copy(browseDense = !it.browseDense) } } }
+                val changed = genre != null || hideWatched || (cat != null && cat.def.requiresExtra()) || key.isNotEmpty()
+                if (changed) item {
+                    FocusBox(onClick = { key = ""; genre = null; hideWatched = false }, shape = RoundedCornerShape(50)) {
+                        Text("Reset", color = C.Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                    }
+                }
+            }
+        }
+        // ---- Grid ----
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(if (LocalWide.current) (if (dense) 8 else 6) else 3), state = grid, modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(if (dense) 12.dp else 16.dp),
+        ) {
+            items(list, key = { it.type + it.id }) { m ->
+                PosterCard(
+                    m, { onOpen(m.type, m.id) }, width = null, watched = m.id in watched,
+                    modifier = Modifier.fillMaxWidth(), focusScale = 1.05f, onLongClick = { menuFor = m }, compact = dense,
+                )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                when {
+                    cat == null -> Message("No catalogs", "Add a catalog addon in Settings.")
+                    pager?.loading == true -> Loading(Modifier.fillMaxWidth().padding(16.dp))
+                    pager?.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                        Message("Couldn't load this catalog", pager.error)
+                        Pill("Try again", false) { pager.retry() }
+                    }
+                    pager?.done == true && list.isEmpty() -> Message("Nothing here", if (hideWatched) "You've watched everything in this list." else null)
+                    LocalIsTv.current && list.isNotEmpty() -> Text(
+                        "Tip: hold OK on a poster to mark it watched or add it to My List.",
+                        color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp),
+                    )
+                    else -> Spacer(Modifier.size(4.dp))
+                }
+            }
+        }
+    }
+}
+
+/** A filter button showing its current value, e.g. "Genre: Comedy ▾". */
+@Composable
+private fun DropChip(label: String, value: String, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.05f) { f ->
+        Row(
+            Modifier.background(if (f) C.Surface2 else C.Surface).border(1.dp, if (f) C.Accent else C.Line, RoundedCornerShape(50))
+                .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("$label  ", color = C.Muted, fontSize = 12.sp)
+            Text(value, color = C.Text, fontSize = 13.sp, fontFamily = Display, fontWeight = FontWeight.Bold, maxLines = 1)
+            Icon(Icons.Default.ArrowDropDown, null, tint = C.Muted, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** Grid of choices in a dialog; the current choice gets the remote's focus. */
+@Composable
+private fun OptionPicker(title: String, options: List<Pair<String, String>>, selected: String?, columns: Int = 4, onPick: (String?) -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { onPick(null) },
+        containerColor = C.Surface,
+        title = { Text(title, style = Heading, fontSize = 20.sp) },
+        text = {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (LocalWide.current) columns else 2),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.heightIn(max = 420.dp),
+            ) {
+                items(options, key = { it.first }) { (k, label) ->
+                    val sel = k == (selected ?: "")
+                    FocusBox(
+                        onClick = { onPick(k) }, shape = RoundedCornerShape(10.dp), focusScale = 1.04f,
+                        modifier = Modifier.fillMaxWidth().then(if (sel) Modifier.tvInitialFocus() else Modifier),
+                    ) { f ->
                         Text(
-                            listOfNotNull(typeLabel(type), cat?.def?.name, effectiveGenre ?: "All genres").joinToString("  ·  "),
-                            color = C.Muted, fontSize = 13.sp,
+                            label, color = if (sel) Color.White else C.Text, fontSize = 14.sp, maxLines = 1,
+                            fontFamily = Display, fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                            modifier = Modifier.fillMaxWidth().background(if (sel) C.Accent else if (f) C.Surface2 else C.Bg).padding(horizontal = 12.dp, vertical = 11.dp),
                         )
                     }
-                    FocusBox(onClick = { filtersOpen = !filtersOpen }, shape = RoundedCornerShape(50), focusScale = 1.05f) { f ->
-                        Row(
-                            Modifier.background(if (filtersOpen || f) C.Surface2 else C.Surface).padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(if (filtersOpen) Icons.Default.ExpandLess else Icons.Default.Tune, null, tint = C.Accent, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (filtersOpen) "Done" else "Filters", color = C.Text, fontSize = 14.sp)
-                        }
-                    }
                 }
-                AnimatedVisibility(filtersOpen) {
-                    Column(
-                        Modifier.fillMaxWidth().background(C.Surface, RoundedCornerShape(12.dp)).padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        FilterLine("Type") {
-                            items(types) { t -> Pill(typeLabel(t), type == t) { if (type != t) { type = t; key = ""; genre = null } } }
-                        }
-                        if (forType.size > 1) FilterLine("Catalog") {
-                            items(forType, key = { it.key }) { c -> Pill(c.def.name ?: c.def.id, c.key == cat?.key) { key = c.key } }
-                        }
-                        if (genres.isNotEmpty()) FilterLine("Genre") {
-                            if (cat?.def?.requires("genre") != true) item { Pill("All", effectiveGenre == null) { genre = null; filtersOpen = false } }
-                            items(genres) { g -> Pill(g, g == effectiveGenre) { genre = g; filtersOpen = false } }
-                        }
-                    }
-                }
-                if (!filtersOpen && LocalIsTv.current) Text("Tip: hold OK on a poster to mark it watched or add it to My List.", color = C.Muted, fontSize = 11.sp)
             }
-        }
-        val list = pager?.items.orEmpty()
-        items(list, key = { it.type + it.id }) { m ->
-            PosterCard(
-                m, { onOpen(m.type, m.id) }, width = null, watched = m.id in watched,
-                modifier = Modifier.fillMaxWidth(), focusScale = 1.05f, onLongClick = { menuFor = m },
-            )
-        }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            when {
-                cat == null -> Message("No catalogs", "Add a catalog addon in Settings.")
-                pager?.loading == true -> Loading(Modifier.fillMaxWidth().padding(16.dp))
-                pager?.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Message("Couldn't load this catalog", pager.error)
-                    Pill("Try again", false) { pager.retry() }
-                }
-                pager?.done == true && list.isEmpty() -> Message("Nothing here")
-                else -> Spacer(Modifier.size(4.dp))
-            }
-        }
-    }
+        },
+        confirmButton = {},
+    )
 }
-
-@Composable
-private fun FilterLine(label: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = C.Muted, fontSize = 12.sp, modifier = Modifier.width(64.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
-    }
-}
-
-@Suppress("unused")
-private val keepColor = Color.Transparent

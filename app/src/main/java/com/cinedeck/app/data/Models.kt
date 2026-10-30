@@ -194,7 +194,9 @@ data class Settings(
     val subtitleLangs: String = "eng",
     val autoSubtitles: Boolean = true,
     val rdToken: String = "",
-    val navPosition: String = "side", // side | top (TV and tablets)
+    val navPosition: String = "top", // side | top (TV and tablets)
+    val uiVersion: Int = 0,
+    val browseDense: Boolean = true, // Browse grid: 8 across on TV (true) or 6 (false)
     val streamSort: String = "quality", // quality | seeders | size
 )
 

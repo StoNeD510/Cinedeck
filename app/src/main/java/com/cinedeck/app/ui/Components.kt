@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -71,6 +72,7 @@ fun FocusBox(
     Box(
         modifier
             .scale(s)
+            .then(if (focused) Modifier.shadow(14.dp, shape, ambientColor = C.Accent, spotColor = C.Accent) else Modifier)
             .clip(shape)
             .then(if (focused) Modifier.border(2.5.dp, C.Accent, shape) else Modifier)
             .combinedClick(src, onClick, onLongClick),
@@ -86,7 +88,7 @@ private fun Modifier.combinedClick(src: MutableInteractionSource, onClick: () ->
 fun posterWidth(): Dp = if (LocalIsTv.current) 140.dp else if (LocalWide.current) 130.dp else 112.dp
 
 @Composable
-fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f, onLongClick: (() -> Unit)? = null) {
+fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f, onLongClick: (() -> Unit)? = null, compact: Boolean = false) {
     Column(modifier.then(if (width != null) Modifier.width(width) else Modifier)) {
         FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale) {
             AsyncImage(
@@ -109,13 +111,13 @@ fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), prog
                 modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(20.dp).background(Color.Black, RoundedCornerShape(50)),
             )
             if (progress > 0f) LinearProgressIndicator(
-                progress = { progress }, color = C.Accent, trackColor = Color(0x66000000),
+                progress = { progress }, color = C.Cyan, trackColor = Color(0x66000000),
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(meta.name, color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        meta.yearText?.let { Text(it, color = C.Muted, fontSize = 11.sp, maxLines = 1) }
+        Text(meta.name, color = C.Text, fontSize = if (compact) 12.sp else 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (!compact) meta.yearText?.let { Text(it, color = C.Muted, fontSize = 11.sp, maxLines = 1) }
     }
 }
 
@@ -125,7 +127,7 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = C.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(title, style = Heading, fontSize = 19.sp, modifier = Modifier.weight(1f))
         if (onMore != null) FocusBox(onClick = onMore, shape = RoundedCornerShape(50)) {
             Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("See all", color = C.Muted, fontSize = 13.sp)
@@ -159,9 +161,10 @@ fun Pill(text: String, selected: Boolean, onClick: () -> Unit) {
     FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.04f) {
         Text(
             text,
-            color = if (selected) Color.Black else C.Text,
+            color = if (selected) Color.White else C.Text,
             fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            fontFamily = Display,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             modifier = Modifier.background(if (selected) C.Accent else C.Surface2).padding(horizontal = 14.dp, vertical = 7.dp),
         )
     }
@@ -328,5 +331,38 @@ private fun MenuRow(label: String, modifier: Modifier = Modifier, onClick: () ->
     FocusBox(onClick = onClick, modifier = modifier.fillMaxWidth(), focusScale = 1.02f) { f ->
         Text(label, color = if (f) Color.Black else C.Text, fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth().background(if (f) C.Accent else C.Surface2).padding(14.dp))
+    }
+}
+
+/** Little equalizer mark used in the logo. */
+@Composable
+fun EqMark(height: Dp = 18.dp) {
+    val bars = listOf(0.55f, 0.9f, 0.0f, 1f, 0.65f)
+    Row(horizontalArrangement = Arrangement.spacedBy(height * 0.12f), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(height)) {
+        bars.forEachIndexed { i, h ->
+            if (i == 2) {
+                androidx.compose.foundation.Canvas(Modifier.size(height * 0.5f, height * 0.6f)) {
+                    val p = androidx.compose.ui.graphics.Path().apply { moveTo(0f, 0f); lineTo(size.width, size.height / 2); lineTo(0f, size.height); close() }
+                    drawPath(p, Color.White)
+                }
+            } else Box(
+                Modifier.size(height * 0.22f, height * h).clip(RoundedCornerShape(50))
+                    .background(if (i % 2 == 0) C.Accent else C.Cyan),
+            )
+        }
+    }
+}
+
+/** ReelDJ wordmark: "Reel" + magenta "DJ" pill. */
+@Composable
+fun Logo(size: androidx.compose.ui.unit.TextUnit = 20.sp, mark: Boolean = true) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (mark) { EqMark(androidx.compose.ui.unit.Dp(size.value * 1.05f)); Spacer(Modifier.width(8.dp)) }
+        Text("Reel", color = C.Text, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = size)
+        Spacer(Modifier.width(3.dp))
+        Text(
+            "DJ", color = C.Bg, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = size,
+            modifier = Modifier.background(C.Accent, RoundedCornerShape(50)).padding(horizontal = 7.dp),
+        )
     }
 }

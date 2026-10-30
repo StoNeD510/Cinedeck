@@ -51,7 +51,7 @@ fun SearchScreen(onOpen: (String, String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp)) {
-                Text("Search", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("Search", style = Heading, fontSize = 24.sp)
                 RemoteTextField(q, { q = it }, "Search", placeholder = "Movies, TV shows…", modifier = Modifier.padding(top = 10.dp))
             }
         }

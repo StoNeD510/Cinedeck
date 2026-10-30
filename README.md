@@ -1,8 +1,10 @@
-# CineDeck
+# ReelDJ
+
+![ReelDJ](docs/tv-banner.png)
 
 A Stremio-compatible streaming app for Android phones, tablets and Android TV, with a Moviebox-style interface, watch tracking and an episode calendar.
 
-## What's in 0.1.0
+## Features
 
 - **Stremio addons** – install any addon by URL (the link Stremio's "Share addon" gives you) or by opening a `stremio://` link. Catalogs, metadata, streams and subtitles all come from your addons. Cinemeta and OpenSubtitles are installed by default.
 - **Real-Debrid** – works through your debrid-configured addon. Optionally add your RD API token to see account status and play files already in your RD downloads.
@@ -18,13 +20,13 @@ Torrent-only (P2P) streams are hidden for now.
 
 ## Install
 
-Download an APK from the **Actions** tab (latest run → *CineDeck-apks*) or from **Releases**:
+Download an APK from the **Actions** tab (latest run → *ReelDJ-apks*) or from **Releases**:
 
 | File | For |
 |---|---|
-| `CineDeck-arm64-v8a.apk` | Most phones, tablets, Shield, Chromecast with Google TV, newer Fire TV |
-| `CineDeck-armeabi-v7a.apk` | Older / 32-bit TV boxes and Fire TV Sticks |
-| `CineDeck-universal.apk` | Works everywhere (bigger) |
+| `ReelDJ-arm64-v8a.apk` | Most phones, tablets, Shield, Chromecast with Google TV, newer Fire TV |
+| `ReelDJ-armeabi-v7a.apk` | Older / 32-bit TV boxes and Fire TV Sticks |
+| `ReelDJ-universal.apk` | Works everywhere (bigger) |
 
 ## Build
 
@@ -34,3 +36,6 @@ Download an APK from the **Actions** tab (latest run → *CineDeck-apks*) or fro
 APKs land in `app/build/outputs/apk/release/`. Push a tag like `v0.1.1` to publish a GitHub release automatically.
 
 The release signing key (`app/cinedeck-release.jks`, password `cinedeck`) is committed on purpose so every build installs over the previous one. Don't reuse it for anything else.
+
+
+Space Grotesk font: SIL Open Font License (see `third_party/`).

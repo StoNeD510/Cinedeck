@@ -15,7 +15,7 @@ object CrashLog {
             runCatching {
                 val trace = e.stackTraceToString().lines().take(60).joinToString("\n")
                 file.writeText(
-                    "CineDeck ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
+                    "ReelDJ ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
                         "${Build.MANUFACTURER} ${Build.MODEL}\nThread: ${t.name}\n\n$trace",
                 )
             }

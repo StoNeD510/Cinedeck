@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">CineDeck</string>
-    <color name="bg">#0B0D10</color>
-    <color name="accent">#00D49B</color>
+    <string name="app_name">ReelDJ</string>
+    <color name="bg">#08080B</color>
+    <color name="accent">#FF3D9A</color>
+    <color name="icon_bg">#08080B</color>
 
     <style name="Theme.CineDeck" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>

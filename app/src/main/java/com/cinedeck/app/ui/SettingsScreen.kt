@@ -71,7 +71,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
     var langs by remember { mutableStateOf(data.settings.subtitleLangs) }
 
     LazyColumn(Modifier.fillMaxSize().widthIn(max = 900.dp), contentPadding = PaddingValues(bottom = 32.dp)) {
-        item { Text("Settings", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(16.dp)) }
+        item { Text("Settings", style = Heading, fontSize = 24.sp, modifier = Modifier.padding(16.dp)) }
 
         // ---------- Addons ----------
         item { SettingsHeader("ADDONS") }
@@ -144,7 +144,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
         item {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Text(
-                    "Optional. Your API token (from real-debrid.com, under “API token”) lets CineDeck show your account status and play files already in your Real-Debrid downloads.",
+                    "Optional. Your API token (from real-debrid.com, under “API token”) lets ReelDJ show your account status and play files already in your Real-Debrid downloads.",
                     color = C.Muted, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -217,7 +217,7 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 }
             }
         }
-        item { Text("CineDeck 0.2.0", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
+        item { Text("ReelDJ ${com.cinedeck.app.BuildConfig.VERSION_NAME}", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(16.dp)) }
     }
 }
 
