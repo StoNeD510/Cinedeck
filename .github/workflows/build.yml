@@ -33,8 +33,14 @@ jobs:
         with:
           name: CineDeck-apks
           path: dist/*.apk
-      - name: Publish release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Read version
+        id: ver
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.name }}
+          name: CineDeck ${{ steps.ver.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: dist/*.apk
