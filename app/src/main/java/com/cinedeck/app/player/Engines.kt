@@ -59,6 +59,14 @@ private fun langName(code: String?): String? {
     return runCatching { Locale.forLanguageTag(code).displayLanguage.takeIf { it.isNotBlank() && it != code } }.getOrNull() ?: code
 }
 
+/** Picture modes: 0 Fit, 1 Fill screen (crop), 2 Stretch, 3 Remove black bars (zooms widescreen films that have bars in the picture). */
+val PictureModes = listOf("Fit", "Fill screen", "Stretch", "Remove black bars")
+
+internal fun cinemaScale(v: View, mode: Int) {
+    val k = if (mode == 3) 1.33f else 1f // 2.39:1 film inside a 16:9 frame
+    v.scaleX = k; v.scaleY = k
+}
+
 // ---------------------------------------------------------------- ExoPlayer
 
 @OptIn(UnstableApi::class)
@@ -182,6 +190,7 @@ class ExoEngine(private val ctx: Context) : Engine {
             2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
+        cinemaScale(pv, mode)
     }
 
     override fun videoInfo(): String {
@@ -254,6 +263,7 @@ class VlcEngine(ctx: Context) : Engine {
             2 -> MediaPlayer.ScaleType.SURFACE_FILL
             else -> MediaPlayer.ScaleType.SURFACE_BEST_FIT
         }
+        cinemaScale(layout, mode)
     }
 
     override fun videoInfo(): String {

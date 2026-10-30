@@ -343,7 +343,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         CtlChip(Icons.Default.Audiotrack, "Audio") { panel = "audio" }
                         CtlChip(Icons.Default.Subtitles, "Subtitles") { panel = "text" }
-                        CtlChip(Icons.Default.AspectRatio, listOf("Fit", "Zoom", "Stretch")[resize]) { resize = (resize + 1) % 3; engine?.setResize(resize) }
+                        CtlChip(Icons.Default.AspectRatio, PictureModes[resize]) { panel = "picture" }
                         CtlChip(Icons.Default.SwapHoriz, if (kind == "exo") "Switch to VLC" else "Switch to ExoPlayer") {
                             switchEngine(if (kind == "exo") "vlc" else "exo")
                         }
@@ -352,21 +352,28 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             }
         }
 
-        // Track picker
+        // Audio / subtitle / picture pickers open in their own window so the remote moves into them.
         panel?.let { p ->
             val e = engine
-            val opts = if (e == null) emptyList() else if (p == "audio") e.audioTracks() else e.textTracks()
-            Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable { panel = null }, contentAlignment = Alignment.CenterEnd) {
-                Column(Modifier.fillMaxHeight().widthIn(max = 380.dp).background(UiC.Surface).padding(16.dp)) {
-                    Text(if (p == "audio") "Audio" else "Subtitles", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(10.dp))
-                    LazyColumn {
-                        if (p == "text") item { TrackRow("Off", opts.none { it.selected }) { e?.selectText(null); panel = null } }
-                        items(opts) { o -> TrackRow(o.label, o.selected) { if (p == "audio") e?.selectAudio(o.id) else e?.selectText(o.id); panel = null } }
-                        if (opts.isEmpty()) item { Text("No tracks found yet", color = UiC.Muted, fontSize = 13.sp) }
-                    }
-                }
+            val opts: List<TrackOpt> = when (p) {
+                "audio" -> e?.audioTracks().orEmpty()
+                "text" -> listOf(TrackOpt("off", "Off", e?.textTracks().orEmpty().none { it.selected })) + e?.textTracks().orEmpty()
+                else -> PictureModes.mapIndexed { i, n -> TrackOpt(i.toString(), n, i == resize) }
             }
+            OptionsDialog(
+                title = when (p) { "audio" -> "Audio"; "text" -> "Subtitles"; else -> "Picture size" },
+                options = opts,
+                empty = if (p == "picture") "" else "No tracks found yet. They appear once the video starts.",
+                onPick = { o ->
+                    when (p) {
+                        "audio" -> e?.selectAudio(o.id)
+                        "text" -> e?.selectText(if (o.id == "off") null else o.id)
+                        else -> { resize = o.id.toInt(); e?.setResize(resize) }
+                    }
+                    panel = null
+                },
+                onDismiss = { panel = null },
+            )
         }
 
         // Errors
@@ -380,7 +387,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 Text(msg, color = UiC.Muted, fontSize = 13.sp, maxLines = 4)
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CtlChip(Icons.Default.SwapHoriz, if (kind == "exo") "Try VLC" else "Try ExoPlayer") { switchEngine(if (kind == "exo") "vlc" else "exo") }
+                    val errFocus = remember { FocusRequester() }
+                    LaunchedEffect(msg) { kotlinx.coroutines.delay(100); runCatching { errFocus.requestFocus() } }
+                    CtlChip(Icons.Default.SwapHoriz, if (kind == "exo") "Try VLC" else "Try ExoPlayer", Modifier.focusRequester(errFocus)) { switchEngine(if (kind == "exo") "vlc" else "exo") }
                     CtlChip(Icons.Default.PlayArrow, "External player") { PlayerLauncher.external(ctx, req) }
                     CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Back") { onExit() }
                 }
@@ -503,8 +512,8 @@ private fun CtlButton(icon: ImageVector, desc: String, big: Boolean = false, mod
 }
 
 @Composable
-private fun CtlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.08f) {
+private fun CtlChip(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.08f, modifier = modifier) {
         Row(Modifier.background(Color(0x40FFFFFF)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -514,9 +523,40 @@ private fun CtlChip(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), focusScale = 1.02f) {
-        Row(Modifier.fillMaxWidth().background(if (selected) UiC.Surface2 else Color.Transparent).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun OptionsDialog(title: String, options: List<TrackOpt>, empty: String, onPick: (TrackOpt) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        val first = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect }
+        }
+        Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() }, contentAlignment = Alignment.CenterEnd) {
+            Column(
+                Modifier.fillMaxHeight().width(400.dp).background(UiC.Surface)
+                    .clickable(remember { MutableInteractionSource() }, indication = null) {}
+                    .padding(20.dp),
+            ) {
+                Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = com.cinedeck.app.ui.Display)
+                Spacer(Modifier.height(12.dp))
+                if (options.isEmpty()) Text(empty, color = UiC.Muted, fontSize = 13.sp)
+                val focusIndex = options.indexOfFirst { it.selected }.coerceAtLeast(0)
+                LazyColumn {
+                    items(options.size) { i ->
+                        val o = options[i]
+                        TrackRow(o.label, o.selected, if (i == focusIndex) Modifier.focusRequester(first) else Modifier) { onPick(o) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackRow(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, modifier = modifier.fillMaxWidth().padding(vertical = 3.dp), focusScale = 1.02f) { f ->
+        Row(Modifier.fillMaxWidth().background(if (f) UiC.Accent.copy(alpha = 0.25f) else if (selected) UiC.Surface2 else Color.Transparent).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
             if (selected) Icon(Icons.Default.Check, null, tint = UiC.Accent)
         }
