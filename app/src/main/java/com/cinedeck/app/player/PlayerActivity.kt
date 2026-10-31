@@ -267,9 +267,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var nextDismissed by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(15) }
     LaunchedEffect(req.videoId) { nextVideo = runCatching { NextEpisode.episodeAfter(req) }.getOrNull() }
-    // Card from 90% of the episode (where credits usually start); stream lookup starts earlier, at 80%,
+    // Card from 93% of the episode (where credits usually start); stream lookup starts earlier, at 80%,
     // so the button is ready the moment the card appears.
-    val nearEnd = dur > 60_000 && pos >= dur * 0.90
+    val nearEnd = dur > 60_000 && pos >= dur * 0.93
     val prefetch = dur > 60_000 && pos >= dur * 0.80
     val showNext = nextVideo != null && !nextDismissed && (nearEnd || ended) && error == null
     LaunchedEffect(prefetch || showNext, nextVideo) {
