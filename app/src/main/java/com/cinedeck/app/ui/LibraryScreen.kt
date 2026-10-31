@@ -47,6 +47,7 @@ import java.util.Date
 fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, String) -> Unit) {
     val data by Store.data.collectAsState()
     var tab by rememberSaveable { mutableStateOf("list") }
+    val prog = titleProgress()
     var type by rememberSaveable { mutableStateOf("all") }
     val minSize = if (LocalIsTv.current) 140.dp else if (LocalWide.current) 130.dp else 105.dp
 
@@ -77,8 +78,8 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
         if (tab == "list") {
             if (list.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Message("Your list is empty", "Use “My List” on any title to save it here. Shows you save also feed the Upcoming calendar.") }
             items(list, key = { it.id }) { li ->
-                val watched = data.progress[li.id]?.watched == true
-                PosterCard(Meta(li.id, li.type, li.name, li.poster, li.background), { onOpen(li.type, li.id) }, width = null, watched = watched, modifier = Modifier.fillMaxWidth())
+                val f = prog[li.id] ?: 0f
+                PosterCard(Meta(li.id, li.type, li.name, li.poster, li.background), { onOpen(li.type, li.id) }, width = null, watched = f >= 0.999f, progress = if (f < 0.999f) f else 0f, modifier = Modifier.fillMaxWidth())
             }
         } else {
             if (history.isEmpty()) item { Message("Nothing watched yet") }

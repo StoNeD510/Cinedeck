@@ -111,8 +111,9 @@ fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), prog
                 modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(20.dp).background(Color.Black, RoundedCornerShape(50)),
             )
             if (progress > 0f) LinearProgressIndicator(
-                progress = { progress }, color = C.Cyan, trackColor = Color(0x66000000),
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
+                progress = { progress.coerceAtLeast(0.03f) }, color = C.Cyan, trackColor = Color(0x99000000),
+                drawStopIndicator = {}, gapSize = 0.dp,
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(5.dp),
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -143,6 +144,7 @@ fun postersAcross(): Int = if (LocalWide.current) 6 else 3
 
 @Composable
 fun PosterRow(items: List<Meta>, onOpen: (Meta) -> Unit, watchedIds: Set<String> = watchedTitleIds()) {
+    val prog = titleProgress()
     var menuFor by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Meta?>(null) }
     menuFor?.let { m -> TitleActions(m, onOpen = { onOpen(m) }, onDismiss = { menuFor = null }) }
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -151,7 +153,7 @@ fun PosterRow(items: List<Meta>, onOpen: (Meta) -> Unit, watchedIds: Set<String>
         val peek = 18.dp // a sliver of the next poster shows the row scrolls
         val w = (maxWidth - 16.dp - gap * n - peek) / n
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, width = w, watched = m.id in watchedIds, focusScale = 1.05f, onLongClick = { menuFor = m }) }
+            items(items, key = { it.type + it.id }) { m -> PosterCard(m, { onOpen(m) }, width = w, progress = prog[m.id]?.takeIf { it < 0.999f } ?: 0f, watched = m.id in watchedIds, focusScale = 1.05f, onLongClick = { menuFor = m }) }
         }
     }
 }
@@ -280,11 +282,36 @@ fun RemoteTextField(
     }
 }
 
-/** Titles with anything marked watched (movies watched, or shows with watched episodes). */
+/** How far through each title you are: movies by playback position, shows by aired episodes watched. */
+@Composable
+fun titleProgress(): Map<String, Float> {
+    val d by com.cinedeck.app.data.Store.data.collectAsState()
+    val followed by HomeData.followed.collectAsState()
+    return androidx.compose.runtime.remember(d.progress, followed) {
+        val out = HashMap<String, Float>()
+        d.progress.values.groupBy { it.metaId }.forEach { (id, list) ->
+            val first = list.first()
+            if (first.type == "series") {
+                val meta = followed[id] ?: com.cinedeck.app.data.Addons.cachedMeta("series", id)
+                val aired = meta?.let { m -> com.cinedeck.app.data.Tracker.sortedEpisodes(m).filter { it.season != 0 && it.isAired() } }
+                if (!aired.isNullOrEmpty()) {
+                    // Watched episodes count fully, a partly watched one counts for its share.
+                    val done = aired.sumOf { v -> d.progress[v.id]?.let { p -> if (p.watched) 1.0 else p.fraction.toDouble() } ?: 0.0 }
+                    out[id] = (done / aired.size).toFloat().coerceIn(0f, 1f)
+                }
+            } else {
+                out[id] = if (first.watched) 1f else first.fraction
+            }
+        }
+        out
+    }
+}
+
+/** Titles finished: movies watched, shows with every aired episode watched. */
 @Composable
 fun watchedTitleIds(): Set<String> {
-    val d by com.cinedeck.app.data.Store.data.collectAsState()
-    return androidx.compose.runtime.remember(d.progress) { d.progress.values.filter { it.watched }.map { it.metaId }.toSet() }
+    val p = titleProgress()
+    return androidx.compose.runtime.remember(p) { p.filterValues { it >= 0.999f }.keys }
 }
 
 /** Hold-OK / long-press menu for a poster: mark watched, My List, open. */

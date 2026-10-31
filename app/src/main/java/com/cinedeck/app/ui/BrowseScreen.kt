@@ -150,6 +150,7 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
 
     menuFor?.let { m -> TitleActions(m, onOpen = { onOpen(m.type, m.id) }, onDismiss = { menuFor = null }) }
     val watched = watchedTitleIds()
+    val prog = titleProgress()
     val list = pager?.items.orEmpty().let { l -> if (hideWatched) l.filter { it.id !in watched } else l }
     // When hiding watched titles empties the screen, keep fetching.
     LaunchedEffect(pager, hideWatched, list.size) {
@@ -197,7 +198,7 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
         ) {
             items(list, key = { it.type + it.id }) { m ->
                 PosterCard(
-                    m, { onOpen(m.type, m.id) }, width = null, watched = m.id in watched,
+                    m, { onOpen(m.type, m.id) }, width = null, watched = m.id in watched, progress = prog[m.id]?.takeIf { it < 0.999f } ?: 0f,
                     modifier = Modifier.fillMaxWidth(), focusScale = 1.05f, onLongClick = { menuFor = m }, compact = dense,
                 )
             }

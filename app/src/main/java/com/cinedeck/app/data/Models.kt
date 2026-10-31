@@ -198,7 +198,8 @@ data class Settings(
     val uiVersion: Int = 0,
     val browseDense: Boolean = true,
     val theme: String = "neon",
-    val themeIcon: Boolean = true, // switch the launcher icon with the theme // Browse grid: 8 across on TV (true) or 6 (false)
+    val themeIcon: Boolean = true, // switch the launcher icon with the theme
+    val autoplayNext: Boolean = true, // TV shows: start the next episode automatically // Browse grid: 8 across on TV (true) or 6 (false)
     val streamSort: String = "quality", // quality | seeders | size
 )
 
@@ -231,4 +232,7 @@ data class PlayRequest(
     val episodeTitle: String? = null,
     val engine: String = "auto",
     val filename: String? = null,
+    val addonUrl: String? = null,   // addon the stream came from (to pick the next episode's stream)
+    val bingeGroup: String? = null, // Stremio hint: streams from the same release across episodes
+    val resolution: String? = null,
 )

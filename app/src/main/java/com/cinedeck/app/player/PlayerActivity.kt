@@ -259,8 +259,41 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     fun toggle() { engine?.let { if (it.isPlaying) it.pause() else it.play() } }
     fun seekBy(d: Long) { engine?.let { it.seekTo((it.position + d).coerceIn(0, if (it.duration > 0) it.duration else Long.MAX_VALUE)); pos = it.position } }
 
+    // ---- Next episode ----
+    val autoplay = Store.settings.autoplayNext
+    var nextVideo by remember { mutableStateOf<com.cinedeck.app.data.Video?>(null) }
+    var nextReq by remember { mutableStateOf<PlayRequest?>(null) }
+    var nextState by remember { mutableStateOf("idle") } // idle | finding | ready | none
+    var nextDismissed by remember { mutableStateOf(false) }
+    var countdown by remember { mutableIntStateOf(15) }
+    LaunchedEffect(req.videoId) { nextVideo = runCatching { NextEpisode.episodeAfter(req) }.getOrNull() }
+    val nearEnd = dur > 60_000 && (dur - pos <= 45_000 || pos >= dur * 0.96)
+    val showNext = nextVideo != null && !nextDismissed && (nearEnd || ended) && error == null
+    LaunchedEffect(showNext) {
+        if (showNext && nextState == "idle") {
+            nextState = "finding"
+            nextReq = runCatching { NextEpisode.resolve(req, nextVideo!!) }.getOrNull()
+            nextState = if (nextReq != null) "ready" else "none"
+        }
+    }
+    fun playNext() {
+        val n = nextReq ?: return
+        engine?.let { e -> if (e.duration > 0) Store.saveProgress(req, e.duration, e.duration) }
+        PlayerLauncher.play(ctx, n.copy(engine = Store.settings.engine))
+        onExit()
+    }
+    // Auto-play: count down once the next stream is found; at the very end, go right away.
+    LaunchedEffect(showNext, nextState, autoplay) {
+        if (!showNext || nextState != "ready" || !autoplay) return@LaunchedEffect
+        countdown = if (ended) 3 else 15
+        while (countdown > 0) { kotlinx.coroutines.delay(1000); countdown-- }
+        playNext()
+    }
+    LaunchedEffect(ended) { if (ended && autoplay && nextState == "ready") { countdown = 0; playNext() } }
+
     BackHandler {
         when {
+            showNext && !ended -> nextDismissed = true
             panel != null -> panel = null
             controls && error == null -> controls = false
             else -> { save(); onExit() }
@@ -272,6 +305,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             .onPreviewKeyEvent { ev ->
                 lastInput = System.currentTimeMillis()
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (showNext && !controls && ev.key.nativeKeyCode in listOf(
+                        AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN,
+                        AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT,
+                    )) return@onPreviewKeyEvent false
                 when (ev.key.nativeKeyCode) {
                     AKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AKeyEvent.KEYCODE_SPACE -> { toggle(); true }
                     AKeyEvent.KEYCODE_MEDIA_PLAY -> { engine?.play(); true }
@@ -376,6 +413,12 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             )
         }
 
+        if (showNext) NextCard(
+            video = nextVideo!!, state = nextState, countdown = if (autoplay && nextState == "ready") countdown else null,
+            fallbackImage = req.background, modifier = Modifier.align(Alignment.BottomEnd).padding(28.dp),
+            onPlay = { playNext() }, onHide = { nextDismissed = true },
+        )
+
         // Errors
         error?.let { msg ->
             Column(
@@ -469,6 +512,46 @@ private fun ScrubBar(
                 modifier = Modifier.offset(x = (x - 34.dp).coerceIn(0.dp, maxWidth - 68.dp), y = (-34).dp)
                     .background(UiC.Accent, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
             )
+        }
+    }
+}
+
+/** "Up next" card shown near the end of an episode. */
+@Composable
+private fun NextCard(
+    video: com.cinedeck.app.data.Video, state: String, countdown: Int?, fallbackImage: String?,
+    modifier: Modifier, onPlay: () -> Unit, onHide: () -> Unit,
+) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(state) { repeat(8) { kotlinx.coroutines.delay(100); if (runCatching { focus.requestFocus() }.isSuccess) return@LaunchedEffect } }
+    Row(
+        modifier.widthIn(max = 560.dp).background(Color(0xEE08080B), RoundedCornerShape(14.dp))
+            .border(1.dp, UiC.Line, RoundedCornerShape(14.dp)).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        coil.compose.AsyncImage(
+            video.thumbnail ?: fallbackImage, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.width(170.dp).height(96.dp).clip(RoundedCornerShape(8.dp)).background(UiC.Surface2),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("UP NEXT", color = UiC.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+            Text(
+                epCode(video.season, video.ep) + "  ·  " + video.label, color = Color.White, fontSize = 15.sp,
+                fontFamily = com.cinedeck.app.ui.Display, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                when (state) {
+                    "ready" -> CtlChip(Icons.Default.PlayArrow, if (countdown != null) "Play now ($countdown)" else "Play next episode", Modifier.focusRequester(focus)) { onPlay() }
+                    "none" -> Text("No matching stream found. Pick one from the episode list.", color = UiC.Muted, fontSize = 12.sp)
+                    else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = UiC.Accent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp)); Text("Finding stream…", color = UiC.Muted, fontSize = 12.sp)
+                    }
+                }
+                CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Hide", if (state != "ready") Modifier.focusRequester(focus) else Modifier) { onHide() }
+            }
         }
     }
 }

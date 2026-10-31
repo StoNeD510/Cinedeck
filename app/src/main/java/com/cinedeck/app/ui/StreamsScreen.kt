@@ -50,7 +50,7 @@ import com.cinedeck.app.data.Stream
 import com.cinedeck.app.data.StreamInfo
 import com.cinedeck.app.player.PlayerLauncher
 
-private data class Row_(val addonName: String, val stream: Stream, val info: StreamInfo)
+private data class Row_(val addonName: String, val stream: Stream, val info: StreamInfo, val addonUrl: String = "")
 
 @Composable
 fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> Unit) {
@@ -70,7 +70,7 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
     val rows = remember(results) {
         results.orEmpty().flatMap { a ->
             val name = a.addon.manifest?.name ?: "Addon"
-            a.streams.filter { it.playableUrl != null || it.externalUrl != null }.map { Row_(name, it, StreamInfo.of(it)) }
+            a.streams.filter { it.playableUrl != null || it.externalUrl != null }.map { Row_(name, it, StreamInfo.of(it), a.addon.url) }
         }
     }
     val p2pOnly = remember(results) { results.orEmpty().sumOf { a -> a.streams.count { it.url == null && it.infoHash != null } } }
@@ -100,6 +100,7 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
             videoId = videoId, metaId = metaId, type = type, name = m?.name ?: metaId,
             poster = m?.poster, background = m?.background, season = video?.season, episode = video?.ep,
             episodeTitle = video?.label, engine = engine, filename = s.behaviorHints?.filename,
+            addonUrl = r.addonUrl, bingeGroup = s.behaviorHints?.bingeGroup, resolution = r.info.resolution,
         )
         if (engine == "external") PlayerLauncher.external(ctx, req) else PlayerLauncher.play(ctx, req)
     }

@@ -228,6 +228,16 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                 }
                 Text("Auto starts with ExoPlayer and switches to VLC by itself if a file won't play.", color = C.Muted, fontSize = 12.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto-play next episode", color = C.Text, fontSize = 14.sp)
+                        Text("TV shows start the next episode after a short countdown. Off: you get a Next episode button instead.", color = C.Muted, fontSize = 12.sp)
+                    }
+                    Switch(
+                        data.settings.autoplayNext, { v -> Store.updateSettings { it.copy(autoplayNext = v) } },
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.White),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Load subtitles from addons", color = C.Text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Switch(
                         data.settings.autoSubtitles, { v -> Store.updateSettings { it.copy(autoSubtitles = v) } },
