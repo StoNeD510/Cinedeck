@@ -167,7 +167,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         engine?.addSubtitles(found, applyNow = !started)
     }
 
+    var finished by remember { mutableStateOf(false) } // marked watched (Up next pressed): later saves must not undo it
     fun save() {
+        if (finished) return
         val e = engine ?: return
         if (e.duration > 0) Store.saveProgress(req, e.position, e.duration)
     }
@@ -212,7 +214,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             e.start(req.url, req.headers, subs, startAt, langs)
             e.setResize(resize)
             onDispose {
-                if (e.duration > 0) Store.saveProgress(req, e.position, e.duration)
+                if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration)
                 (e.view.parent as? android.view.ViewGroup)?.removeView(e.view)
                 e.release()
                 if (engine === e) engine = null
@@ -253,7 +255,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 dur = e.duration
                 playing = e.isPlaying
                 buffering = e.isBuffering
-                if (!started && e.isPlaying && e.position > 300) started = true
+                if (!started && e.isPlaying && e.position > 300) { started = true; Store.startWatching(req) }
             }
             if (++tick % 20 == 0) save()
             if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
@@ -302,7 +304,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     }
     fun playNext() {
         val n = nextReq ?: return
-        engine?.let { e -> if (e.duration > 0) Store.saveProgress(req, e.duration, e.duration) }
+        finished = true
+        Store.markWatched(req)
+        Store.startWatching(n) // so Continue Watching points at the new episode right away
         PlayerLauncher.play(ctx, n.copy(engine = Store.settings.engine))
         onExit()
     }

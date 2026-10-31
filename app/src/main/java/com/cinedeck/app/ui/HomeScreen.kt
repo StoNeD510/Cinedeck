@@ -107,7 +107,8 @@ fun HomeScreen(
 
     val manifestsReady = data.addons.count { it.manifest != null }
     LaunchedEffect(manifestsReady) { HomeData.load() }
-    LaunchedEffect(data.library.size, data.progress.size) { HomeData.loadFollowed() }
+    val followedKey = remember(data.library, data.progress) { (data.library.map { it.id } + data.progress.values.filter { it.type == "series" }.map { it.metaId }).toSet() }
+    LaunchedEffect(followedKey) { HomeData.loadFollowed() }
 
     val shown = rows?.filter { filter == "all" || it.type == filter }.orEmpty()
     val hero = remember(shown) { shown.flatMap { it.items.take(4) }.filter { it.background != null }.distinctBy { it.id }.take(8) }

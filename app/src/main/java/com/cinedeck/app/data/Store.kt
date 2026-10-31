@@ -73,6 +73,29 @@ object Store {
         d.copy(progress = d.progress + (req.videoId to p))
     }
 
+    /** Episode or movie finished (Up next pressed, or played to the end). */
+    fun markWatched(req: PlayRequest) = edit { d ->
+        val old = d.progress[req.videoId]
+        d.copy(progress = d.progress + (req.videoId to Progress(
+            videoId = req.videoId, metaId = req.metaId, type = req.type, name = req.name,
+            poster = req.poster, background = req.background, season = req.season, episode = req.episode,
+            episodeTitle = req.episodeTitle, position = 0, duration = old?.duration ?: 0, watched = true,
+            updatedAt = System.currentTimeMillis(),
+        )))
+    }
+
+    /** Records that playback of this item has begun, so it shows in Continue Watching before the first progress save. */
+    fun startWatching(req: PlayRequest) = edit { d ->
+        val old = d.progress[req.videoId]
+        if (old != null && (old.watched || old.position > 0)) d
+        else d.copy(progress = d.progress + (req.videoId to Progress(
+            videoId = req.videoId, metaId = req.metaId, type = req.type, name = req.name,
+            poster = req.poster, background = req.background, season = req.season, episode = req.episode,
+            episodeTitle = req.episodeTitle, position = 1, duration = old?.duration ?: 0, watched = false,
+            updatedAt = System.currentTimeMillis(),
+        )))
+    }
+
     fun setWatched(meta: Meta, videos: List<Video>, watched: Boolean) = edit { d ->
         val map = d.progress.toMutableMap()
         if (videos.isEmpty()) {
