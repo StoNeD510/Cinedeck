@@ -46,7 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.focus.onFocusChanged
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import com.cinedeck.app.data.Addons
 import com.cinedeck.app.data.Meta
 import com.cinedeck.app.data.Store
@@ -96,7 +98,9 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
     val inList = data.library.any { it.id == m.id }
     val movieProg = data.progress[m.id]
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
         item {
             Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(380.dp) else Modifier.aspectRatio(16f / 11f))) {
                 AsyncImage(m.background ?: m.poster, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(), alignment = Alignment.TopCenter)
@@ -122,7 +126,15 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
         }
         item {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Moving the remote back up to Play also brings the show's artwork back into view.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.onFocusChanged { f ->
+                        if (f.hasFocus && listState.firstVisibleItemIndex > 0 || f.hasFocus && listState.firstVisibleItemScrollOffset > 0) {
+                            scope.launch { listState.animateScrollToItem(0) }
+                        }
+                    },
+                ) {
                     if (m.type == "series") {
                         if (next != null) {
                             val partial = (data.progress[next.id]?.position ?: 0) > 0

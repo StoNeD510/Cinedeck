@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import com.cinedeck.app.data.Addons
 import com.cinedeck.app.data.Meta
 import com.cinedeck.app.data.PlayRequest
@@ -57,24 +58,27 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
     val ctx = LocalContext.current
     val data by Store.data.collectAsState()
     var meta by remember { mutableStateOf<Meta?>(Addons.cachedMeta(type, metaId)) }
-    var results by remember { mutableStateOf<List<Addons.AddonStreams>?>(null) }
+    var results by remember { mutableStateOf<List<Addons.AddonStreams>>(emptyList()) }
+    var loadingStreams by remember { mutableStateOf(true) }
     var quality by rememberSaveable { mutableStateOf("All") }
     val engine = data.settings.engine
 
     LaunchedEffect(type, metaId, videoId) {
-        if (meta == null) meta = runCatching { Addons.meta(type, metaId) }.getOrNull()
-        results = Addons.streams(type, videoId)
+        // Details and streams load side by side; each addon's streams show up as soon as it answers.
+        launch { if (meta == null) meta = runCatching { Addons.meta(type, metaId) }.getOrNull() }
+        Addons.streamsFlow(type, videoId).collect { r -> results = results + r }
+        loadingStreams = false
     }
 
     val video = meta?.videos?.firstOrNull { it.id == videoId }
     val rows = remember(results) {
-        results.orEmpty().flatMap { a ->
+        results.flatMap { a ->
             val name = a.addon.manifest?.name ?: "Addon"
             a.streams.filter { it.playableUrl != null || it.externalUrl != null }.map { Row_(name, it, StreamInfo.of(it), a.addon.url) }
         }
     }
-    val p2pOnly = remember(results) { results.orEmpty().sumOf { a -> a.streams.count { it.url == null && it.infoHash != null } } }
-    val errors = results.orEmpty().filter { it.error != null }
+    val p2pOnly = remember(results) { results.sumOf { a -> a.streams.count { it.url == null && it.infoHash != null } } }
+    val errors = results.filter { it.error != null }
     val qualities = listOf("All", "4K", "1440p", "1080p", "720p", "SD").filter { q -> q == "All" || rows.any { it.info.resolution == q } }
     val sort = data.settings.streamSort
     val filtered = rows.filter { quality == "All" || it.info.resolution == quality }
@@ -139,7 +143,7 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
             }
         }
         when {
-            results == null -> item { Loading() ; Text("Asking your addons for streams…", color = C.Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
+            rows.isEmpty() && loadingStreams -> item { Loading() ; Text("Asking your addons for streams…", color = C.Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
             rows.isEmpty() -> item {
                 val hasStreamAddon = data.addons.any { it.manifest?.supports("stream", type, videoId) == true }
                 Message(
@@ -164,6 +168,12 @@ fun StreamsScreen(type: String, metaId: String, videoId: String, onBack: () -> U
                     }
                 }
                 item(key = "s_" + i + r.addonName + r.stream.playableUrl) { StreamRow(r, ::play, if (i == 0) Modifier.tvInitialFocus(shown.size + sort.hashCode()) else Modifier) }
+            }
+        }
+        if (loadingStreams && rows.isNotEmpty()) item {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.CircularProgressIndicator(color = C.Accent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp)); Text("Still waiting on other addons…", color = C.Muted, fontSize = 12.sp)
             }
         }
         if (errors.isNotEmpty()) item {

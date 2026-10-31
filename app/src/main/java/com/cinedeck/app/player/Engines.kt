@@ -49,6 +49,8 @@ interface Engine {
     fun textTracks(): List<TrackOpt>
     fun selectAudio(id: String)
     fun selectText(id: String?) // null = off
+    /** Subtitles from addons that arrived after playback started. */
+    fun addSubtitles(subs: List<Subtitle>, applyNow: Boolean)
     fun setResize(mode: Int) // 0 fit, 1 zoom/crop, 2 stretch
     fun videoInfo(): String
     fun release()
@@ -98,7 +100,7 @@ class ExoEngine(private val ctx: Context) : Engine {
                 .setSelectUndeterminedTextLanguage(false),
         )
         val load = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(30_000, 120_000, 2_000, 4_000)
+            .setBufferDurationsMs(20_000, 120_000, 1_000, 2_500)
             .setTargetBufferBytes(200 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
@@ -112,7 +114,29 @@ class ExoEngine(private val ctx: Context) : Engine {
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) { onError("${error.errorCodeName}: ${error.cause?.message ?: error.message}") }
             override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_ENDED) onEnded() }
+            override fun onTracksChanged(tracks: Tracks) {
+                // After loading an addon subtitle on demand, switch to it once it shows up.
+                val want = pendingTextId ?: return
+                val g = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && (0 until it.length).any { i -> it.getTrackFormat(i).id == want } } ?: return
+                val i = (0 until g.length).first { g.getTrackFormat(it).id == want }
+                pendingTextId = null
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)).build()
+            }
         })
+        this.url = url; extSubs = subs; extApplied = true
+        p.setMediaItem(buildItem(subs), startMs)
+        p.prepare()
+        p.playWhenReady = true
+    }
+
+    private var url = ""
+    private var extSubs: List<Subtitle> = emptyList()
+    private var extApplied = false
+    private var pendingTextId: String? = null
+
+    private fun buildItem(subs: List<Subtitle>): MediaItem {
         val item = MediaItem.Builder().setUri(url)
         val lower = url.lowercase().substringBefore("?")
         when {
@@ -128,11 +152,27 @@ class ExoEngine(private val ctx: Context) : Engine {
                 else -> MimeTypes.APPLICATION_SUBRIP
             }
             MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url)).setMimeType(mime).setLanguage(s.lang)
-                .setLabel("${langName(s.lang) ?: s.lang} (addon)").setId(s.id ?: s.url).build()
+                .setLabel("${langName(s.lang) ?: s.lang} (addon)").setId(s.url).build()
         })
-        p.setMediaItem(item.build(), startMs)
+        return item.build()
+    }
+
+    override fun addSubtitles(subs: List<Subtitle>, applyNow: Boolean) {
+        extSubs = subs
+        if (subs.isEmpty()) return
+        if (applyNow) reload(null) else extApplied = false
+    }
+
+    /** Re-opens the stream at the current position with the addon subtitles attached. */
+    private fun reload(selectUrl: String?) {
+        val p = player ?: return
+        val pos = p.currentPosition
+        val playing = p.playWhenReady
+        pendingTextId = selectUrl
+        extApplied = true
+        p.setMediaItem(buildItem(extSubs), pos)
         p.prepare()
-        p.playWhenReady = true
+        p.playWhenReady = playing
     }
 
     override fun play() { player?.play() }
@@ -162,9 +202,12 @@ class ExoEngine(private val ctx: Context) : Engine {
 
     override fun textTracks(): List<TrackOpt> {
         val disabled = player?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true
-        return groups(C.TRACK_TYPE_TEXT).flatMapIndexed { gi, g ->
+        val loaded = groups(C.TRACK_TYPE_TEXT).flatMapIndexed { gi, g ->
             (0 until g.length).map { i -> TrackOpt("$gi:$i", describe(g, i), !disabled && g.isTrackSelected(i)) }
         }
+        // Addon subtitles not loaded yet are offered too; picking one loads it.
+        val extra = if (extApplied) emptyList() else extSubs.map { s -> TrackOpt("ext:" + s.url, "${langName(s.lang) ?: s.lang} (addon)", false) }
+        return loaded + extra
     }
 
     private fun select(type: Int, id: String) {
@@ -180,8 +223,11 @@ class ExoEngine(private val ctx: Context) : Engine {
     override fun selectAudio(id: String) = select(C.TRACK_TYPE_AUDIO, id)
     override fun selectText(id: String?) {
         val p = player ?: return
-        if (id == null) p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-        else select(C.TRACK_TYPE_TEXT, id)
+        when {
+            id == null -> p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            id.startsWith("ext:") -> reload(id.removePrefix("ext:"))
+            else -> select(C.TRACK_TYPE_TEXT, id)
+        }
     }
 
     override fun setResize(mode: Int) {
@@ -212,7 +258,7 @@ class VlcEngine(ctx: Context) : Engine {
     override val label = "VLC"
     override var onError: (String) -> Unit = {}
     override var onEnded: () -> Unit = {}
-    private val lib = LibVLC(ctx, arrayListOf("--network-caching=3000", "--http-reconnect", "--audio-time-stretch", "--sub-autodetect-file"))
+    private val lib = LibVLC(ctx, arrayListOf("--network-caching=1500", "--http-reconnect", "--audio-time-stretch", "--sub-autodetect-file", "--no-stats"))
     private val mp = MediaPlayer(lib)
     private val layout = VLCVideoLayout(ctx).apply { keepScreenOn = true }
     override val view: View get() = layout
@@ -256,6 +302,9 @@ class VlcEngine(ctx: Context) : Engine {
     override fun textTracks() = mp.spuTracks.orEmpty().filter { it.id >= 0 }.map { TrackOpt(it.id.toString(), it.name, it.id == mp.spuTrack) }
     override fun selectAudio(id: String) { mp.audioTrack = id.toInt() }
     override fun selectText(id: String?) { mp.spuTrack = id?.toInt() ?: -1 }
+    override fun addSubtitles(subs: List<Subtitle>, applyNow: Boolean) {
+        subs.forEach { mp.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(it.url), false) }
+    }
 
     override fun setResize(mode: Int) {
         mp.videoScale = when (mode) {

@@ -125,7 +125,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     val settings = Store.settings
     val langs = settings.subtitleLangs.split(",", " ").map { it.trim() }.filter { it.isNotBlank() }
     var kind by remember { mutableStateOf(if (req.engine == "vlc") "vlc" else "exo") }
-    var subs by remember { mutableStateOf<List<Subtitle>?>(null) }
+    var subs by remember { mutableStateOf<List<Subtitle>>(emptyList()) }
     var engine by remember { mutableStateOf<Engine?>(null) }
     var startAt by remember {
         val p = Store.data.value.progress[req.videoId]
@@ -149,13 +149,15 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
 
-    // Subtitles from addons (OpenSubtitles etc.), filtered to preferred languages.
+    // Subtitles from addons load in the background while the stream connects; playback never waits for them.
     LaunchedEffect(req.videoId) {
-        subs = if (settings.autoSubtitles && req.type != "other") {
-            withTimeoutOrNull(6_000) { runCatching { Addons.subtitles(req.type, req.videoId) }.getOrDefault(emptyList()) }.orEmpty()
-                .filter { s -> langs.isEmpty() || langs.any { l -> s.lang.equals(l, true) || s.lang.startsWith(l.take(2), true) } }
-                .distinctBy { it.url }.take(12)
-        } else emptyList()
+        if (!settings.autoSubtitles || req.type == "other") return@LaunchedEffect
+        val found = withTimeoutOrNull(8_000) { runCatching { Addons.subtitles(req.type, req.videoId) }.getOrDefault(emptyList()) }.orEmpty()
+            .filter { s -> langs.isEmpty() || langs.any { l -> s.lang.equals(l, true) || s.lang.startsWith(l.take(2), true) } }
+            .distinctBy { it.url }.take(12)
+        subs = found
+        // If the picture is already up, don't interrupt it: the subtitles are offered in the Subtitles menu instead.
+        engine?.addSubtitles(found, applyNow = !started)
     }
 
     fun save() {
@@ -173,11 +175,6 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         kind = to
     }
 
-    if (subs == null) {
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = UiC.Accent) }
-        return
-    }
-
     key(kind) {
         DisposableEffect(Unit) {
             val e: Engine = if (kind == "vlc") VlcEngine(ctx) else ExoEngine(ctx)
@@ -188,7 +185,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             e.onEnded = { ended = true; controls = true; save() }
             engine = e
             engineKind = kind
-            e.start(req.url, req.headers, subs!!, startAt, langs)
+            e.start(req.url, req.headers, subs, startAt, langs)
             e.setResize(resize)
             onDispose {
                 if (e.duration > 0) Store.saveProgress(req, e.position, e.duration)
@@ -295,12 +292,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     LaunchedEffect(ended) { if (ended && autoplay && nextState == "ready") { countdown = 0; playNext() } }
 
     BackHandler {
-        when {
-            showNext && !ended -> nextDismissed = true
-            panel != null -> panel = null
-            controls && error == null -> controls = false
-            else -> { save(); onExit() }
-        }
+        if (panel != null) panel = null else { save(); onExit() }
     }
 
     Box(
@@ -618,7 +610,14 @@ private fun OptionsDialog(title: String, options: List<TrackOpt>, empty: String,
         LaunchedEffect(Unit) {
             repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect }
         }
-        Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() }, contentAlignment = Alignment.CenterEnd) {
+        Box(
+            Modifier.fillMaxSize()
+                .onPreviewKeyEvent { ev ->
+                    if (ev.type == KeyEventType.KeyDown && (ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK || ev.key.nativeKeyCode == AKeyEvent.KEYCODE_ESCAPE)) { onDismiss(); true } else false
+                }
+                .clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() },
+            contentAlignment = Alignment.CenterEnd,
+        ) {
             Column(
                 Modifier.fillMaxHeight().width(400.dp).background(UiC.Surface)
                     .clickable(remember { MutableInteractionSource() }, indication = null) {}

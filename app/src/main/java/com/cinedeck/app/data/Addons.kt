@@ -2,6 +2,7 @@ package com.cinedeck.app.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -16,10 +17,17 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object Http {
-    val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+    @Volatile var client: OkHttpClient = build(null)
+        private set
+
+    /** Call once at startup: adds a disk cache so catalogs, show details and streams reload instantly. */
+    fun init(cacheDir: java.io.File) { client = build(cacheDir) }
+
+    private fun build(cacheDir: java.io.File?): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .apply { if (cacheDir != null) cache(okhttp3.Cache(java.io.File(cacheDir, "http"), 100L * 1024 * 1024)) }
         .build()
 
     suspend fun get(url: String, headers: Map<String, String> = emptyMap()): String = withContext(Dispatchers.IO) {
@@ -117,6 +125,22 @@ object Addons {
                 }
             }
         }.awaitAll()
+    }
+
+    /** Like [streams], but each addon's answer is delivered as soon as it arrives. */
+    fun streamsFlow(type: String, id: String): kotlinx.coroutines.flow.Flow<AddonStreams> = kotlinx.coroutines.flow.channelFlow {
+        active().filter { it.manifest!!.supports("stream", type, id) }.forEach { a ->
+            launch {
+                val r = try {
+                    withTimeoutOrNull(45_000) {
+                        AppJson.decodeFromString(StreamResponse.serializer(), Http.get("${baseOf(a.url)}/stream/$type/${enc(id)}.json"))
+                    }?.let { AddonStreams(a, it.streams) } ?: AddonStreams(a, emptyList(), "Timed out")
+                } catch (e: Exception) {
+                    AddonStreams(a, emptyList(), e.message ?: "Failed")
+                }
+                send(r)
+            }
+        }
     }
 
     suspend fun subtitles(type: String, id: String): List<Subtitle> = coroutineScope {
