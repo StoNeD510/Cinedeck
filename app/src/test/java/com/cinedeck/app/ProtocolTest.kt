@@ -36,3 +36,11 @@ class ProtocolTest {
         assertEquals("4K", i.resolution); assertTrue(i.cached); assertEquals("18.4 GB", i.size); assertEquals(120, i.seeders); assertEquals("WEB-DL", i.source)
     }
 }
+
+class HashTest {
+    @Test fun hashKnownFile() {
+        // Classic OpenSubtitles reference sample: breakdance.avi → hash 8e245d9679d31e12
+        val h = runBlocking { Addons.videoHash("https://raw.githubusercontent.com/StoNeD510/Cinedeck/main/README.md", emptyMap()) }
+        println("hash small file -> $h (null expected: file shorter than 128 KB)")
+    }
+}

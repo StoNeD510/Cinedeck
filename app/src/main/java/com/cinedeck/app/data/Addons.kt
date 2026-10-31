@@ -143,16 +143,50 @@ object Addons {
         }
     }
 
-    suspend fun subtitles(type: String, id: String): List<Subtitle> = coroutineScope {
+    /**
+     * Subtitles for a video. [extra] can carry videoHash / videoSize / filename so addons return
+     * subtitles cut for the exact file being played (the same trick Stremio uses to keep them in sync).
+     */
+    suspend fun subtitles(type: String, id: String, extra: Map<String, String> = emptyMap()): List<Subtitle> = coroutineScope {
+        val tail = if (extra.isEmpty()) ".json" else "/" + extra.entries.joinToString("&") { "${it.key}=${enc(it.value)}" } + ".json"
         active().filter { it.manifest!!.supports("subtitles", type, id) }.map { a ->
             async {
                 runCatching {
                     withTimeoutOrNull(8_000) {
-                        AppJson.decodeFromString(SubtitleResponse.serializer(), Http.get("${baseOf(a.url)}/subtitles/$type/${enc(id)}.json")).subtitles
+                        AppJson.decodeFromString(SubtitleResponse.serializer(), Http.get("${baseOf(a.url)}/subtitles/$type/${enc(id)}$tail")).subtitles
                     } ?: emptyList()
                 }.getOrDefault(emptyList())
             }
         }.awaitAll().flatten()
+    }
+
+    /**
+     * OpenSubtitles-style fingerprint of a remote video: file size + checksum of its first and last 64 KB,
+     * fetched with two small range requests. Returns (hash, size) or null if the server won't cooperate.
+     */
+    suspend fun videoHash(url: String, headers: Map<String, String>): Pair<String, Long>? = withContext(Dispatchers.IO) {
+        runCatching {
+            val chunk = 65536L
+            fun fetch(range: String): Pair<ByteArray, String?> {
+                val b = Request.Builder().url(url).header("User-Agent", "ReelDJ/0.5").header("Range", range)
+                headers.forEach { (k, v) -> b.header(k, v) }
+                Http.client.newCall(b.build()).execute().use { r ->
+                    if (r.code != 206) throw IOException("No range support (${r.code})")
+                    return r.body!!.bytes() to r.header("Content-Range")
+                }
+            }
+            val (head, contentRange) = fetch("bytes=0-${chunk - 1}")
+            val size = contentRange?.substringAfter('/')?.trim()?.toLongOrNull() ?: throw IOException("No size")
+            if (size < chunk * 2) return@runCatching null
+            val (tailBytes, _) = fetch("bytes=${size - chunk}-${size - 1}")
+            var h = size
+            fun add(b: ByteArray) {
+                val buf = java.nio.ByteBuffer.wrap(b).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                while (buf.remaining() >= 8) h += buf.long
+            }
+            add(head); add(tailBytes)
+            String.format("%016x", h) to size
+        }.getOrNull()
     }
 
     /** Fetch metas for many ids at once, a few at a time. */

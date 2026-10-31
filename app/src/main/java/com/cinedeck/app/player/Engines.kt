@@ -17,6 +17,8 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -72,8 +74,10 @@ internal fun cinemaScale(v: View, mode: Int) {
 // ---------------------------------------------------------------- ExoPlayer
 
 @OptIn(UnstableApi::class)
-class ExoEngine(private val ctx: Context) : Engine {
-    override val label = "ExoPlayer"
+class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false) : Engine {
+    override val label = if (safeAudio) "ExoPlayer (stereo)" else "ExoPlayer"
+    /** Error code name + reason of the last failure, for diagnostics. */
+    var lastError: PlaybackException? = null
     override var onError: (String) -> Unit = {}
     override var onEnded: () -> Unit = {}
     private val selector = DefaultTrackSelector(ctx)
@@ -88,8 +92,18 @@ class ExoEngine(private val ctx: Context) : Engine {
     override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>) {
         val http = OkHttpDataSource.Factory(Http.client).setDefaultRequestProperties(headers)
         headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { http.setUserAgent(it.value) }
-        val renderers = DefaultRenderersFactory(ctx)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        val renderers = object : DefaultRenderersFactory(ctx) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
+                val b = DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                // Safe mode: fold surround tracks down to stereo so devices that refuse 6/8-channel output still play.
+                if (safeAudio) b.setAudioProcessors(arrayOf(stereoDownmix()))
+                return b.build()
+            }
+        }
+            .setExtensionRendererMode(if (safeAudio) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            .setEnableAudioFloatOutput(!safeAudio)
             .setEnableDecoderFallback(true)
         selector.setParameters(
             selector.buildUponParameters()
@@ -107,12 +121,24 @@ class ExoEngine(private val ctx: Context) : Engine {
         val p = ExoPlayer.Builder(ctx, renderers)
             .setTrackSelector(selector)
             .setLoadControl(load)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http)))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http))
+                    // Streams drop out for a moment now and then: keep retrying for a good while instead of failing.
+                    .setLoadErrorHandlingPolicy(object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(12) {
+                        override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+                            val base = super.getRetryDelayMsFor(info)
+                            return if (base == C.TIME_UNSET) 1500L else base.coerceAtMost(4000L)
+                        }
+                    }),
+            )
             .build()
         player = p
         pv.player = p
         p.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) { onError("${error.errorCodeName}: ${error.cause?.message ?: error.message}") }
+            override fun onPlayerError(error: PlaybackException) {
+                lastError = error
+                onError("${error.errorCodeName}: ${error.cause?.message ?: error.message}")
+            }
             override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_ENDED) onEnded() }
             override fun onTracksChanged(tracks: Tracks) {
                 // After loading an addon subtitle on demand, switch to it once it shows up.
@@ -247,8 +273,60 @@ class ExoEngine(private val ctx: Context) : Engine {
 
     override fun release() {
         pv.player = null
+        player?.stop()
         player?.release()
         player = null
+    }
+
+    /** After a fatal network error: reopen the stream where it stopped. Returns false if nothing to recover. */
+    fun reconnect(): Boolean {
+        val p = player ?: return false
+        val pos = p.currentPosition
+        p.seekTo(pos)
+        p.prepare()
+        p.playWhenReady = true
+        return true
+    }
+
+    companion object {
+        /** Network / source problems: reconnect rather than change player. */
+        fun isNetworkError(e: PlaybackException?): Boolean {
+            val c = e?.errorCode ?: return false
+            return c in 2000..2999 || c == PlaybackException.ERROR_CODE_TIMEOUT || c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+        }
+
+        /** Audio-output or decoder problems: worth one retry in safe mode before giving up on ExoPlayer. */
+        fun isAudioOrDecoderError(e: PlaybackException?): Boolean = when (e?.errorCode) {
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED, PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED, PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED, PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED -> true
+            else -> false
+        }
+
+        /** Mixes 3–8 channel PCM down to stereo with the usual centre/surround/LFE weights; 1–2 channels pass through. */
+        fun stereoDownmix(): androidx.media3.common.audio.ChannelMixingAudioProcessor {
+            val p = androidx.media3.common.audio.ChannelMixingAudioProcessor()
+            p.putChannelMixingMatrix(androidx.media3.common.audio.ChannelMixingMatrix.create(1, 1))
+            p.putChannelMixingMatrix(androidx.media3.common.audio.ChannelMixingMatrix.create(2, 2))
+            val c = 0.7071f; val s = 0.5f; val lfe = 0.5f
+            // Android channel order: L R C LFE Ls Rs (Lb Rb)
+            fun m(inCount: Int, rows: List<FloatArray>): androidx.media3.common.audio.ChannelMixingMatrix {
+                val coef = FloatArray(inCount * 2)
+                for (i in 0 until inCount) { coef[i * 2] = rows[i][0]; coef[i * 2 + 1] = rows[i][1] }
+                return androidx.media3.common.audio.ChannelMixingMatrix(inCount, 2, coef)
+            }
+            val L = floatArrayOf(1f, 0f); val R = floatArrayOf(0f, 1f); val C_ = floatArrayOf(c, c); val LFE = floatArrayOf(lfe, lfe)
+            val Ls = floatArrayOf(s, 0f); val Rs = floatArrayOf(0f, s)
+            p.putChannelMixingMatrix(m(3, listOf(L, R, C_)))
+            p.putChannelMixingMatrix(m(4, listOf(L, R, Ls, Rs)))
+            p.putChannelMixingMatrix(m(5, listOf(L, R, C_, Ls, Rs)))
+            p.putChannelMixingMatrix(m(6, listOf(L, R, C_, LFE, Ls, Rs)))
+            p.putChannelMixingMatrix(m(7, listOf(L, R, C_, LFE, Ls, Rs, floatArrayOf(s * c, s * c))))
+            p.putChannelMixingMatrix(m(8, listOf(L, R, C_, LFE, Ls, Rs, Ls, Rs)))
+            return p
+        }
     }
 }
 
@@ -258,7 +336,7 @@ class VlcEngine(ctx: Context) : Engine {
     override val label = "VLC"
     override var onError: (String) -> Unit = {}
     override var onEnded: () -> Unit = {}
-    private val lib = LibVLC(ctx, arrayListOf("--network-caching=1500", "--http-reconnect", "--audio-time-stretch", "--sub-autodetect-file", "--no-stats"))
+    private val lib = LibVLC(ctx, arrayListOf("--network-caching=1500", "--http-reconnect", "--audio-time-stretch", "--sub-autodetect-file", "--no-stats", "--aout=audiotrack"))
     private val mp = MediaPlayer(lib)
     private val layout = VLCVideoLayout(ctx).apply { keepScreenOn = true }
     override val view: View get() = layout

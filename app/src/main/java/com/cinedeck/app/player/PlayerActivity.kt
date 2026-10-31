@@ -95,6 +95,7 @@ import com.cinedeck.app.ui.CineTheme
 import com.cinedeck.app.ui.FocusBox
 import com.cinedeck.app.ui.epCode
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import com.cinedeck.app.ui.C as UiC
 
@@ -152,7 +153,13 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     // Subtitles from addons load in the background while the stream connects; playback never waits for them.
     LaunchedEffect(req.videoId) {
         if (!settings.autoSubtitles || req.type == "other") return@LaunchedEffect
-        val found = withTimeoutOrNull(8_000) { runCatching { Addons.subtitles(req.type, req.videoId) }.getOrDefault(emptyList()) }.orEmpty()
+        // Fingerprint the file first so the addon can return subtitles timed for this exact release.
+        val fp = withTimeoutOrNull(4_000) { Addons.videoHash(req.url, req.headers) }
+        val extra = buildMap {
+            fp?.let { (hash, size) -> put("videoHash", hash); put("videoSize", size.toString()) }
+            req.filename?.let { put("filename", it) }
+        }
+        val found = withTimeoutOrNull(8_000) { runCatching { Addons.subtitles(req.type, req.videoId, extra) }.getOrDefault(emptyList()) }.orEmpty()
             .filter { s -> langs.isEmpty() || langs.any { l -> s.lang.equals(l, true) || s.lang.startsWith(l.take(2), true) } }
             .distinctBy { it.url }.take(12)
         subs = found
@@ -165,6 +172,8 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         if (e.duration > 0) Store.saveProgress(req, e.position, e.duration)
     }
 
+    val switchScope = androidx.compose.runtime.rememberCoroutineScope()
+    var reconnects by remember { mutableIntStateOf(0) }
     fun switchEngine(to: String, reason: String? = null) {
         val e = engine
         if (e != null && e.position > 0) startAt = e.position
@@ -172,15 +181,30 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         error = null
         buffering = true
         reason?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
-        kind = to
+        // Tear the old engine down fully, then give the audio output a moment to free up before the next one opens it.
+        kind = "none"
+        switchScope.launch { kotlinx.coroutines.delay(450); kind = to }
     }
 
     key(kind) {
-        DisposableEffect(Unit) {
-            val e: Engine = if (kind == "vlc") VlcEngine(ctx) else ExoEngine(ctx)
+        if (kind != "none") DisposableEffect(Unit) {
+            val e: Engine = when (kind) { "vlc" -> VlcEngine(ctx); "exosafe" -> ExoEngine(ctx, safeAudio = true); else -> ExoEngine(ctx) }
             e.onError = { msg ->
-                if (kind == "exo" && req.engine == "auto") switchEngine("vlc", "ExoPlayer couldn't play this, switching to VLC")
-                else error = msg
+                PlayerLog.add("${e.label}: $msg  [${req.name} ${req.filename ?: ""}]")
+                val exoErr = (e as? ExoEngine)?.lastError
+                when {
+                    // Connection dropped mid-stream: pick up where it stopped, don't change player.
+                    e is ExoEngine && ExoEngine.isNetworkError(exoErr) && reconnects < 6 -> {
+                        reconnects++
+                        Toast.makeText(ctx, "Connection hiccup, reconnecting…", Toast.LENGTH_SHORT).show()
+                        switchScope.launch { kotlinx.coroutines.delay(800L * reconnects); if (engine === e) e.reconnect() }
+                    }
+                    // Audio output / decoder trouble: try ExoPlayer once more with stereo + platform decoders.
+                    kind == "exo" && req.engine != "vlc" && ExoEngine.isAudioOrDecoderError(exoErr) ->
+                        switchEngine("exosafe", "Audio problem, retrying in stereo…")
+                    kind != "vlc" && req.engine == "auto" -> switchEngine("vlc", "ExoPlayer couldn't play this, switching to VLC")
+                    else -> error = msg
+                }
             }
             e.onEnded = { ended = true; controls = true; save() }
             engine = e
@@ -376,8 +400,8 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                         CtlChip(Icons.Default.Audiotrack, "Audio") { panel = "audio" }
                         CtlChip(Icons.Default.Subtitles, "Subtitles") { panel = "text" }
                         CtlChip(Icons.Default.AspectRatio, PictureModes[resize]) { panel = "picture" }
-                        CtlChip(Icons.Default.SwapHoriz, if (kind == "exo") "Switch to VLC" else "Switch to ExoPlayer") {
-                            switchEngine(if (kind == "exo") "vlc" else "exo")
+                        CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "Switch to VLC" else "Switch to ExoPlayer") {
+                            switchEngine(if (kind != "vlc") "vlc" else "exo")
                         }
                     }
                 }
@@ -427,7 +451,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val errFocus = remember { FocusRequester() }
                     LaunchedEffect(msg) { kotlinx.coroutines.delay(100); runCatching { errFocus.requestFocus() } }
-                    CtlChip(Icons.Default.SwapHoriz, if (kind == "exo") "Try VLC" else "Try ExoPlayer", Modifier.focusRequester(errFocus)) { switchEngine(if (kind == "exo") "vlc" else "exo") }
+                    CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "Try VLC" else "Try ExoPlayer", Modifier.focusRequester(errFocus)) { switchEngine(if (kind != "vlc") "vlc" else "exo") }
                     CtlChip(Icons.Default.PlayArrow, "External player") { PlayerLauncher.external(ctx, req) }
                     CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Back") { onExit() }
                 }

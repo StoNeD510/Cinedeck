@@ -20,6 +20,7 @@ class CineDeckApp : Application(), ImageLoaderFactory {
         super.onCreate()
         CrashLog.install(this)
         Http.init(cacheDir)
+        com.cinedeck.app.player.PlayerLog.init(this)
         Store.init(this)
         scope.launch { Addons.refreshManifests(force = true) }
     }

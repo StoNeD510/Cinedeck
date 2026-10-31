@@ -248,6 +248,17 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
             }
         }
 
+        // ---------- Playback log ----------
+        item { SettingsHeader("PLAYBACK LOG") }
+        item {
+            var log by remember { mutableStateOf(com.cinedeck.app.player.PlayerLog.read()) }
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (log.isEmpty()) Text("No playback problems recorded.", color = C.Muted, fontSize = 12.sp)
+                else log.reversed().forEach { Text(it, color = C.Muted, fontSize = 11.sp, lineHeight = 14.sp) }
+                if (log.isNotEmpty()) HeroButton("Clear log", null) { com.cinedeck.app.player.PlayerLog.clear(); log = emptyList() }
+            }
+        }
+
         // ---------- Data ----------
         item { SettingsHeader("DATA") }
         item {
