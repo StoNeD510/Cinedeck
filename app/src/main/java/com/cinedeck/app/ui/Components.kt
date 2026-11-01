@@ -322,7 +322,12 @@ fun watchedTitleIds(): Set<String> {
 
 /** Hold-OK / long-press menu for a poster: mark watched, My List, open. */
 @Composable
-fun TitleActions(meta: Meta, onOpen: () -> Unit, onDismiss: () -> Unit) {
+fun TitleActions(meta: Meta, onOpen: () -> Unit, onDismiss: () -> Unit) = androidx.compose.runtime.CompositionLocalProvider(LocalScreen provides "dialog") {
+    TitleActionsBody(meta, onOpen, onDismiss)
+}
+
+@Composable
+private fun TitleActionsBody(meta: Meta, onOpen: () -> Unit, onDismiss: () -> Unit) {
     val d by com.cinedeck.app.data.Store.data.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -457,5 +462,7 @@ fun Modifier.rememberFocus(key: String): Modifier {
 @Composable
 fun Screen(name: String, content: @Composable () -> Unit) {
     androidx.compose.runtime.remember(name) { FocusMemory.arm(name); name }
+    // If the remembered tile doesn't show up quickly (filters changed, list reloaded), stop waiting for it.
+    androidx.compose.runtime.LaunchedEffect(name) { kotlinx.coroutines.delay(1500); FocusMemory.pending.remove(name) }
     androidx.compose.runtime.CompositionLocalProvider(LocalScreen provides name, content = content)
 }

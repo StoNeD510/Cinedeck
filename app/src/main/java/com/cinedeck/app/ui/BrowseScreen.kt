@@ -245,7 +245,11 @@ private fun DropChip(label: String, value: String, onClick: () -> Unit) {
 
 /** Grid of choices in a dialog; the current choice gets the remote's focus. */
 @Composable
-private fun OptionPicker(title: String, options: List<Pair<String, String>>, selected: String?, columns: Int = 4, onPick: (String?) -> Unit) {
+private fun OptionPicker(title: String, options: List<Pair<String, String>>, selected: String?, columns: Int = 4, onPick: (String?) -> Unit) =
+    androidx.compose.runtime.CompositionLocalProvider(LocalScreen provides "dialog") { OptionPickerBody(title, options, selected, columns, onPick) }
+
+@Composable
+private fun OptionPickerBody(title: String, options: List<Pair<String, String>>, selected: String?, columns: Int = 4, onPick: (String?) -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { onPick(null) },
         containerColor = C.Surface,

@@ -22,7 +22,7 @@ class UiFlowTest {
             rule.waitForIdle(); Thread.sleep(300)
             if (runCatching(f).getOrDefault(false)) return
         }
-        rule.onRoot().printToString().lines().take(60).forEach(::println)
+        println("TIMEOUT $desc; texts=" + runCatching { texts().take(30) }.getOrNull() + " dialogs=" + rule.onAllNodes(isDialog()).fetchSemanticsNodes().size)
         error("timed out waiting for $desc")
     }
 
@@ -154,6 +154,18 @@ class UiFlowTest {
         }
         rule.onAllNodesWithText("Year", substring = true).onFirst().performClick(); rule.waitForIdle()
         shot("year_picker")
+        rule.onAllNodes(hasText("2024") and hasAnyAncestor(isDialog())).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); rule.waitForIdle()
+        // Open a title, come back, then change Show: the picker must get focus (regression: pending focus blocked it)
+        pick("Show", "TV Shows"); waitFor("tv") { posters() >= 6 }
+        val tile = rule.onAllNodes(hasClickAction() and hasAnyDescendant(hasContentDescription("", substring = true)), useUnmergedTree = true).onLast()
+        println("STEP tile click; dialogs=" + rule.onAllNodes(isDialog()).fetchSemanticsNodes().size)
+        tile.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); rule.waitForIdle()
+        waitFor("details") { onDetails() }
+        rule.activity.onBackPressedDispatcher.onBackPressed(); rule.waitForIdle()
+        waitFor("browse again") { texts().any { it == "Hide watched" } }
+        rule.onAllNodesWithText("Show", substring = true).onFirst().performClick(); rule.waitForIdle()
+        waitFor("picker open", 6_000) { rule.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty() }
+        println("PICKER REOPEN OK (focus itself can't be checked in this harness)")
     }
 
     @Test fun themes() {
