@@ -56,6 +56,7 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
     val history = data.progress.values.filter { type == "all" || it.type == type }
         .groupBy { it.metaId }.map { (_, v) -> v.maxBy { it.updatedAt } }.sortedByDescending { it.updatedAt }
 
+    Screen("library") {
     LazyVerticalGrid(
         columns = if (tab == "list") GridCells.Fixed(postersAcross()) else GridCells.Fixed(1),
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
@@ -85,7 +86,7 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
             if (history.isEmpty()) item { Message("Nothing watched yet") }
             items(history, key = { it.metaId }) { p ->
                 val watchedCount = data.progress.values.count { it.metaId == p.metaId && it.watched }
-                FocusBox(onClick = { onOpen(p.type, p.metaId) }, modifier = Modifier.fillMaxWidth(), focusScale = 1.02f) {
+                FocusBox(onClick = { onOpen(p.type, p.metaId) }, modifier = Modifier.fillMaxWidth(), focusScale = 1.02f, memoryKey = "h:" + p.metaId) {
                     Row(Modifier.fillMaxWidth().background(C.Surface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(p.background ?: p.poster, null, contentScale = ContentScale.Crop, modifier = Modifier.width(120.dp).aspectRatio(16f / 9f).background(C.Surface2, RoundedCornerShape(6.dp)))
                         Spacer(Modifier.width(12.dp))
@@ -111,6 +112,7 @@ fun LibraryScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, Str
             }
         }
     }
+}
 }
 
 @Suppress("unused")

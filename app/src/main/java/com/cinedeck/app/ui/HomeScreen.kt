@@ -126,7 +126,7 @@ fun HomeScreen(
     }
     val watchedIds = remember(data.progress) { data.progress.values.filter { it.watched && it.type == "movie" }.map { it.metaId }.toSet() }
 
-    StableScroll {
+    Screen("home") {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -286,7 +286,7 @@ fun WideCard(
 ) {
     val w = if (LocalIsTv.current) 260.dp else 220.dp
     Column(Modifier.width(w)) {
-        FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+        FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f), memoryKey = "w:" + title + subtitle) {
             AsyncImage(image, title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(C.Surface2))
             Box(Modifier.fillMaxSize().background(BottomFade))
             Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(36.dp).background(Color(0x88000000), RoundedCornerShape(50)).padding(4.dp))

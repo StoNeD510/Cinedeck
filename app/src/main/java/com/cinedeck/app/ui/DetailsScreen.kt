@@ -100,6 +100,7 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Screen("details:" + m.id) {
     LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
         item {
             Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(380.dp) else Modifier.aspectRatio(16f / 11f))) {
@@ -190,7 +191,7 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
                         onClick = { if (aired) onPlay(m.type, m.id, v.id) },
                         onLongClick = { Store.setWatched(m, listOf(v), p?.watched != true) },
                         modifier = Modifier.width(if (wide) 200.dp else 140.dp).aspectRatio(16f / 9f),
-                        focusScale = 1.04f,
+                        focusScale = 1.04f, memoryKey = "ep:" + v.id,
                     ) {
                         AsyncImage(v.thumbnail ?: m.background, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(C.Surface2))
                         if (aired) Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(30.dp).background(Color(0x88000000), RoundedCornerShape(50)).padding(3.dp))
@@ -217,4 +218,5 @@ private fun DetailsContent(m: Meta, onPlay: (String, String, String) -> Unit, on
             }
         }
     }
+}
 }

@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -64,9 +65,11 @@ fun FocusBox(
     shape: Shape = RoundedCornerShape(10.dp),
     onLongClick: (() -> Unit)? = null,
     focusScale: Float = 1.06f,
+    memoryKey: String? = null,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
     val src = remember { MutableInteractionSource() }
+    val modifier = if (memoryKey != null) modifier.rememberFocus(memoryKey) else modifier
     val focused by src.collectIsFocusedAsState()
     val s by animateFloatAsState(if (focused) focusScale else 1f, label = "focus")
     Box(
@@ -90,7 +93,7 @@ fun posterWidth(): Dp = if (LocalIsTv.current) 140.dp else if (LocalWide.current
 @Composable
 fun PosterCard(meta: Meta, onClick: () -> Unit, width: Dp? = posterWidth(), progress: Float = 0f, watched: Boolean = false, modifier: Modifier = Modifier, focusScale: Float = 1.06f, onLongClick: (() -> Unit)? = null, compact: Boolean = false) {
     Column(modifier.then(if (width != null) Modifier.width(width) else Modifier)) {
-        FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale) {
+        FocusBox(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusScale = focusScale, memoryKey = "p:" + meta.type + meta.id) {
             AsyncImage(
                 model = meta.poster, contentDescription = meta.name, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().background(C.Surface2),
@@ -202,8 +205,11 @@ fun epCode(s: Int?, e: Int?): String = if (s == null) "" else "S%02dE%02d".forma
 @Composable
 fun Modifier.tvInitialFocus(key: Any? = Unit): Modifier {
     if (!LocalIsTv.current) return this
+    val screen = LocalScreen.current
     val req = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(key) {
+        // Coming back to this screen: the tile you left takes focus instead.
+        if (FocusMemory.pending[screen] != null) return@LaunchedEffect
         repeat(10) {
             kotlinx.coroutines.delay(120)
             if (runCatching { req.requestFocus() }.isSuccess) return@LaunchedEffect
@@ -414,4 +420,42 @@ fun StableScroll(content: @Composable () -> Unit) {
         }
     }
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides spec) { content() }
+}
+
+/** Name of the screen being shown; focus memory is kept per screen. */
+val LocalScreen = androidx.compose.runtime.staticCompositionLocalOf { "app" }
+
+/**
+ * Remembers which tile had the remote's focus on each screen, so Back (or returning to a tab)
+ * lands on the same tile instead of the first thing on the page.
+ */
+object FocusMemory {
+    val saved = HashMap<String, String>()
+    val pending = HashMap<String, String>()
+    /** Call when a screen is entered: the tile saved for it (if any) will take focus once it appears. */
+    fun arm(screen: String) { saved[screen]?.let { pending[screen] = it } }
+    fun forget(screen: String) { saved.remove(screen); pending.remove(screen) }
+}
+
+@Composable
+fun Modifier.rememberFocus(key: String): Modifier {
+    if (!LocalIsTv.current) return this
+    val screen = LocalScreen.current
+    val req = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(key) {
+        if (FocusMemory.pending[screen] != key) return@LaunchedEffect
+        repeat(12) {
+            kotlinx.coroutines.delay(60)
+            if (runCatching { req.requestFocus() }.isSuccess) { FocusMemory.pending.remove(screen); return@LaunchedEffect }
+        }
+        FocusMemory.pending.remove(screen)
+    }
+    return this.focusRequester(req).onFocusChanged { if (it.isFocused) FocusMemory.saved[screen] = key }
+}
+
+/** Wraps a screen: names it for focus memory and arms the saved tile. */
+@Composable
+fun Screen(name: String, content: @Composable () -> Unit) {
+    androidx.compose.runtime.remember(name) { FocusMemory.arm(name); name }
+    androidx.compose.runtime.CompositionLocalProvider(LocalScreen provides name, content = content)
 }

@@ -136,8 +136,11 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
     val pager = remember(cat?.key, effectiveGenre) { cat?.let { BrowseCache.get(it, effectiveGenre) } }
 
     val grid = rememberLazyGridState()
+    // Scroll to the top only when the filters actually change, not when coming back to this screen.
+    var shownPager by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(pager) {
-        grid.scrollToItem(0)
+        val k = (cat?.key ?: "") + "|" + (effectiveGenre ?: "")
+        if (k != shownPager) { shownPager = k; grid.scrollToItem(0); FocusMemory.forget("browse") }
         if (pager?.items?.isEmpty() == true) pager.loadMore()
     }
     LaunchedEffect(pager) {
@@ -169,6 +172,7 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
         null -> {}
     }
 
+    Screen("browse") {
     Column(Modifier.fillMaxSize()) {
         // ---- Fixed filter bar ----
         Row(
@@ -220,6 +224,7 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
             }
         }
     }
+}
 }
 
 /** A filter button showing its current value, e.g. "Genre: Comedy ▾". */

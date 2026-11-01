@@ -48,6 +48,7 @@ fun SearchScreen(onOpen: (String, String) -> Unit) {
         busy = false
     }
 
+    Screen("search") {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp)) {
@@ -64,4 +65,5 @@ fun SearchScreen(onOpen: (String, String) -> Unit) {
             }
         }
     }
+}
 }

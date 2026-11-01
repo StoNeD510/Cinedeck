@@ -74,6 +74,7 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
     else all.filter { it.video.isAired(now) && !it.watched }.reversed()
     val byDay = entries.groupBy { it.video.releasedDate!! }
 
+    Screen("upcoming") {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -106,7 +107,7 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
                 FocusBox(
                     onClick = { if (aired) onPlay("series", e.meta.id, e.video.id) else onOpen("series", e.meta.id) },
                     onLongClick = { onOpen("series", e.meta.id) },
-                    modifier = Modifier.weight(1f), focusScale = 1.02f,
+                    modifier = Modifier.weight(1f), focusScale = 1.02f, memoryKey = "e:" + e.video.id,
                 ) {
                     Row(Modifier.fillMaxWidth().background(C.Surface).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(e.meta.poster, null, contentScale = ContentScale.Crop, modifier = Modifier.width(54.dp).aspectRatio(2f / 3f).background(C.Surface2))
@@ -141,4 +142,5 @@ fun UpcomingScreen(onOpen: (String, String) -> Unit, onPlay: (String, String, St
             }
         }
     }
+}
 }
