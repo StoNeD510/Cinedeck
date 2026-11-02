@@ -53,6 +53,10 @@ interface Engine {
     fun selectText(id: String?) // null = off
     /** Subtitles from addons that arrived after playback started. */
     fun addSubtitles(subs: List<Subtitle>, applyNow: Boolean)
+    /** Positive = audio plays later than the picture. */
+    fun setAudioDelay(ms: Long)
+    /** Positive = subtitles appear later. Returns false if this player can't shift the current subtitle track. */
+    fun setSubtitleDelay(ms: Long): Boolean
     fun setResize(mode: Int) // 0 fit, 1 zoom/crop, 2 stretch
     fun videoInfo(): String
     fun release()
@@ -93,6 +97,27 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         val http = OkHttpDataSource.Factory(Http.client).setDefaultRequestProperties(headers)
         headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { http.setUserAgent(it.value) }
         val renderers = object : DefaultRenderersFactory(ctx) {
+            // Audio delay: the video renderer is told the clock is ahead/behind, so the picture moves relative to the sound.
+            override fun buildVideoRenderers(
+                context: Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+                enableDecoderFallback: Boolean, eventHandler: android.os.Handler,
+                eventListener: androidx.media3.exoplayer.video.VideoRendererEventListener, allowedVideoJoiningTimeMs: Long,
+                out: ArrayList<androidx.media3.exoplayer.Renderer>,
+            ) {
+                out.add(object : androidx.media3.exoplayer.video.MediaCodecVideoRenderer(
+                    context, getCodecAdapterFactory(), mediaCodecSelector, allowedVideoJoiningTimeMs, enableDecoderFallback, eventHandler, eventListener, 50,
+                ) {
+                    override fun processOutputBuffer(
+                        positionUs: Long, elapsedRealtimeUs: Long, codec: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter?, buffer: java.nio.ByteBuffer?,
+                        bufferIndex: Int, bufferFlags: Int, sampleCount: Int, bufferPresentationTimeUs: Long,
+                        isDecodeOnlyBuffer: Boolean, isLastBuffer: Boolean, format: androidx.media3.common.Format,
+                    ): Boolean = super.processOutputBuffer(
+                        positionUs + audioShiftUs, elapsedRealtimeUs, codec, buffer, bufferIndex, bufferFlags, sampleCount,
+                        bufferPresentationTimeUs, isDecodeOnlyBuffer, isLastBuffer, format,
+                    )
+                })
+            }
+
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
                 val b = DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
@@ -157,6 +182,9 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         p.playWhenReady = true
     }
 
+    @Volatile private var audioShiftUs = 0L
+    private var subDelayMs = 0L
+    private val subTextCache = HashMap<String, String>()
     private var url = ""
     private var extSubs: List<Subtitle> = emptyList()
     private var extApplied = false
@@ -177,7 +205,8 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
                 u.endsWith(".ttml") || u.endsWith(".dfxp") -> MimeTypes.APPLICATION_TTML
                 else -> MimeTypes.APPLICATION_SUBRIP
             }
-            MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url)).setMimeType(mime).setLanguage(s.lang)
+            val uri = if (subDelayMs != 0L) shiftedSubtitleUri(s.url, subDelayMs) ?: Uri.parse(s.url) else Uri.parse(s.url)
+            MediaItem.SubtitleConfiguration.Builder(uri).setMimeType(mime).setLanguage(s.lang)
                 .setLabel("${langName(s.lang) ?: s.lang} (addon)").setId(s.url).build()
         })
         return item.build()
@@ -188,6 +217,36 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         if (subs.isEmpty()) return
         if (applyNow) reload(null) else extApplied = false
     }
+
+    override fun setAudioDelay(ms: Long) { audioShiftUs = ms * 1000 }
+
+    /** External (addon) subtitles are re-timed into a local copy; subtitles embedded in the video can't be shifted here. */
+    override fun setSubtitleDelay(ms: Long): Boolean {
+        subDelayMs = ms
+        val p = player ?: return false
+        val selected = groups(C.TRACK_TYPE_TEXT).firstOrNull { g -> (0 until g.length).any { g.isTrackSelected(it) } }
+        val selId = selected?.let { g -> (0 until g.length).first { g.isTrackSelected(it) }.let { g.getTrackFormat(it).id } }
+        val isExternal = selId != null && extSubs.any { it.url == selId }
+        if (!isExternal) return ms == 0L || selId == null
+        reload(selId)
+        return true
+    }
+
+    /** Downloads a subtitle once, shifts every timestamp (SRT/VTT) and writes it to a cache file. */
+    private fun shiftedSubtitleUri(url: String, ms: Long): Uri? = runCatching {
+        val text = subTextCache.getOrPut(url) { kotlinx.coroutines.runBlocking { Http.get(url) } }
+        val rx = Regex("""(\d{1,2}):(\d{2}):(\d{2})([,.])(\d{3})""")
+        val shifted = rx.replace(text) { m ->
+            val (h, mi, se, sep, mil) = m.destructured
+            var t = ((h.toLong() * 3600 + mi.toLong() * 60 + se.toLong()) * 1000 + mil.toLong()) + ms
+            if (t < 0) t = 0
+            String.format("%02d:%02d:%02d%s%03d", t / 3600000, (t / 60000) % 60, (t / 1000) % 60, sep, t % 1000)
+        }
+        val ext = if (url.lowercase().substringBefore("?").endsWith(".vtt")) "vtt" else "srt"
+        val f = java.io.File(ctx.cacheDir, "sub_" + (url.hashCode().toUInt().toString(16)) + "_" + ms + "." + ext)
+        f.writeText(shifted)
+        Uri.fromFile(f)
+    }.getOrNull()
 
     /** Re-opens the stream at the current position with the addon subtitles attached. */
     private fun reload(selectUrl: String?) {
@@ -272,8 +331,12 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     }
 
     override fun release() {
+        player?.let { p ->
+            runCatching { p.stop() }
+            runCatching { p.clearVideoSurface() }
+        }
         pv.player = null
-        player?.stop()
+        (pv.videoSurfaceView as? android.view.SurfaceView)?.let { sv -> runCatching { sv.holder.surface?.release(); sv.visibility = View.GONE } }
         player?.release()
         player = null
     }
@@ -383,6 +446,8 @@ class VlcEngine(ctx: Context) : Engine {
     override fun addSubtitles(subs: List<Subtitle>, applyNow: Boolean) {
         subs.forEach { mp.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(it.url), false) }
     }
+    override fun setAudioDelay(ms: Long) { mp.audioDelay = ms * 1000 }
+    override fun setSubtitleDelay(ms: Long): Boolean { mp.spuDelay = ms * 1000; return true }
 
     override fun setResize(mode: Int) {
         mp.videoScale = when (mode) {

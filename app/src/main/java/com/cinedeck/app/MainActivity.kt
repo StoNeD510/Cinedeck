@@ -76,6 +76,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val tv = isTv(this)
+        // Menus are standard range: tell the display so it drops HDR mode after a video.
+        if (android.os.Build.VERSION.SDK_INT >= 26) window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+        if (android.os.Build.VERSION.SDK_INT >= 34) runCatching { window.setDesiredHdrHeadroom(1f) }
         handleAddonLink(intent)
         setContent {
             CineTheme {

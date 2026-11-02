@@ -42,6 +42,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Forward10
@@ -100,6 +103,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.cinedeck.app.ui.C as UiC
 
 class PlayerActivity : ComponentActivity() {
+    /** Set by the screen: releases the active engine immediately (frees the video surface so the TV leaves HDR mode). */
+    var teardown: (() -> Unit)? = null
+
+    override fun onPause() {
+        super.onPause()
+        if (isFinishing) { teardown?.invoke(); teardown = null }
+    }
+
+    override fun onDestroy() {
+        teardown?.invoke(); teardown = null
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -176,6 +192,8 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
 
     val switchScope = androidx.compose.runtime.rememberCoroutineScope()
     var reconnects by remember { mutableIntStateOf(0) }
+    var audioDelay by remember { mutableLongStateOf(0L) } // ms, this playback only
+    var subDelay by remember { mutableLongStateOf(0L) }
     fun switchEngine(to: String, reason: String? = null) {
         val e = engine
         if (e != null && e.position > 0) startAt = e.position
@@ -211,13 +229,20 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             e.onEnded = { ended = true; controls = true; save() }
             engine = e
             engineKind = kind
+            (ctx as? PlayerActivity)?.teardown = {
+                if (engine === e) { if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration); runCatching { e.release() }; engine = null }
+            }
             e.start(req.url, req.headers, subs, startAt, langs)
             e.setResize(resize)
+            if (audioDelay != 0L) e.setAudioDelay(audioDelay)
+            if (subDelay != 0L) e.setSubtitleDelay(subDelay)
             onDispose {
-                if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration)
-                (e.view.parent as? android.view.ViewGroup)?.removeView(e.view)
-                e.release()
-                if (engine === e) engine = null
+                if (engine === e) {
+                    if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration)
+                    (e.view.parent as? android.view.ViewGroup)?.removeView(e.view)
+                    e.release()
+                    engine = null
+                }
             }
         }
         val e = engine
@@ -404,6 +429,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                         CtlChip(Icons.Default.Audiotrack, "Audio") { panel = "audio" }
                         CtlChip(Icons.Default.Subtitles, "Subtitles") { panel = "text" }
                         CtlChip(Icons.Default.AspectRatio, PictureModes[resize]) { panel = "picture" }
+                        CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync" }
                         CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "Switch to VLC" else "Switch to ExoPlayer") {
                             switchEngine(if (kind != "vlc") "vlc" else "exo")
                         }
@@ -413,7 +439,16 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         }
 
         // Audio / subtitle / picture pickers open in their own window so the remote moves into them.
-        panel?.let { p ->
+        if (panel == "sync") SyncDialog(
+            audio = audioDelay, sub = subDelay,
+            onAudio = { v -> audioDelay = v; engine?.setAudioDelay(v) },
+            onSub = { v ->
+                subDelay = v
+                if (engine?.setSubtitleDelay(v) == false) Toast.makeText(ctx, "This subtitle track is built into the video; ExoPlayer can't shift it. Use an addon subtitle or switch to VLC.", Toast.LENGTH_LONG).show()
+            },
+            onDismiss = { panel = null },
+        )
+        panel?.takeIf { it != "sync" }?.let { p ->
             val e = engine
             val opts: List<TrackOpt> = when (p) {
                 "audio" -> e?.audioTracks().orEmpty()
@@ -625,6 +660,72 @@ private fun CtlChip(icon: ImageVector, label: String, modifier: Modifier = Modif
             Spacer(Modifier.width(6.dp))
             Text(label, color = Color.White, fontSize = 13.sp)
         }
+    }
+}
+
+private fun fmtDelay(ms: Long) = (if (ms > 0) "+" else "") + (if (ms % 1000 == 0L) "${ms / 1000}s" else "${ms}ms")
+
+/** Audio / subtitle delay for this playback. Remote: up/down picks a row, left/right changes it, OK resets the row. */
+@Composable
+private fun SyncDialog(audio: Long, sub: Long, onAudio: (Long) -> Unit, onSub: (Long) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        val first = remember { FocusRequester() }
+        LaunchedEffect(Unit) { repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect } }
+        Box(
+            Modifier.fillMaxSize()
+                .onPreviewKeyEvent { ev -> if (ev.type == KeyEventType.KeyDown && ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK) { onDismiss(); true } else false }
+                .clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() },
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Column(
+                Modifier.fillMaxHeight().width(440.dp).background(UiC.Surface)
+                    .clickable(remember { MutableInteractionSource() }, indication = null) {}.padding(20.dp),
+            ) {
+                Text("Sync", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = com.cinedeck.app.ui.Display)
+                Text("Resets to zero for every new playback.", color = UiC.Muted, fontSize = 12.sp)
+                Spacer(Modifier.height(16.dp))
+                DelayRow("Audio delay", audio, 50L, "Sound later  →   ←  sound earlier", Modifier.focusRequester(first), onAudio)
+                Spacer(Modifier.height(12.dp))
+                DelayRow("Subtitle delay", sub, 100L, "Subtitles later  →   ←  subtitles earlier", Modifier, onSub)
+                Spacer(Modifier.height(18.dp))
+                CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Done") { onDismiss() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DelayRow(title: String, value: Long, step: Long, hint: String, modifier: Modifier, onChange: (Long) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val limit = 30_000L
+    Column(
+        modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key.nativeKeyCode) {
+                    AKeyEvent.KEYCODE_DPAD_LEFT -> { onChange((value - step).coerceIn(-limit, limit)); true }
+                    AKeyEvent.KEYCODE_DPAD_RIGHT -> { onChange((value + step).coerceIn(-limit, limit)); true }
+                    AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER -> { onChange(0L); true }
+                    else -> false
+                }
+            }
+            .focusable()
+            .background(if (focused) UiC.Surface2 else Color.Transparent, RoundedCornerShape(12.dp))
+            .border(if (focused) 2.dp else 1.dp, if (focused) UiC.Accent else UiC.Line, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+    ) {
+        Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            CtlChip(Icons.Default.Remove, "−${step}") { onChange((value - step).coerceIn(-limit, limit)) }
+            Text(
+                fmtDelay(value), color = if (value == 0L) UiC.Muted else UiC.Cyan, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                fontFamily = com.cinedeck.app.ui.Display, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            CtlChip(Icons.Default.Add, "+${step}") { onChange((value + step).coerceIn(-limit, limit)) }
+        }
+        Text(hint + "   ·   OK resets", color = UiC.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
