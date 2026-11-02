@@ -292,6 +292,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             when {
                 controls && focusScrub -> { scrubFocus.requestFocus(); focusScrub = false }
                 controls -> playFocus.requestFocus()
+                panel == "sync" -> {}
                 else -> rootFocus.requestFocus()
             }
         }
@@ -364,20 +365,21 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     AKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(30_000); true }
                     AKeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-10_000); true }
                     // With the controls hidden, left/right jump straight onto the timeline and start scrubbing.
-                    AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT -> if (started && !controls) {
+                    AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT -> if (started && !controls && panel == null) {
                         val d = if (ev.key.nativeKeyCode == AKeyEvent.KEYCODE_DPAD_LEFT) -10_000L else 10_000L
                         draftMs = (pos + d).coerceIn(0, if (dur > 0) dur else Long.MAX_VALUE)
                         focusScrub = true; controls = true; true
                     } else false
                     AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN ->
-                        if (!started) true else if (!controls) { controls = true; true } else false
+                        if (!started) true else if (!controls && panel == null) { controls = true; true } else false
                     else -> false
                 }
             }
             .focusRequester(rootFocus)
             .focusable()
             .clickable(remember { MutableInteractionSource() }, indication = null) {
-                lastInput = System.currentTimeMillis(); controls = !controls; if (!controls) panel = null
+                lastInput = System.currentTimeMillis()
+                if (panel == "sync") { panel = null; controls = true } else { controls = !controls; if (!controls) panel = null }
             },
     ) {
         if (started && buffering && error == null) CircularProgressIndicator(color = UiC.Accent, modifier = Modifier.align(Alignment.Center).size(56.dp))
@@ -429,7 +431,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                         CtlChip(Icons.Default.Audiotrack, "Audio") { panel = "audio" }
                         CtlChip(Icons.Default.Subtitles, "Subtitles") { panel = "text" }
                         CtlChip(Icons.Default.AspectRatio, PictureModes[resize]) { panel = "picture" }
-                        CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync" }
+                        CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync"; controls = false }
                         CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "Switch to VLC" else "Switch to ExoPlayer") {
                             switchEngine(if (kind != "vlc") "vlc" else "exo")
                         }
@@ -439,14 +441,15 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         }
 
         // Audio / subtitle / picture pickers open in their own window so the remote moves into them.
-        if (panel == "sync") SyncDialog(
+        if (panel == "sync") SyncStrip(
             audio = audioDelay, sub = subDelay,
             onAudio = { v -> audioDelay = v; engine?.setAudioDelay(v) },
             onSub = { v ->
                 subDelay = v
                 if (engine?.setSubtitleDelay(v) == false) Toast.makeText(ctx, "This subtitle track is built into the video; ExoPlayer can't shift it. Use an addon subtitle or switch to VLC.", Toast.LENGTH_LONG).show()
             },
-            onDismiss = { panel = null },
+            onDismiss = { panel = null; controls = true },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp),
         )
         panel?.takeIf { it != "sync" }?.let { p ->
             val e = engine
@@ -665,40 +668,33 @@ private fun CtlChip(icon: ImageVector, label: String, modifier: Modifier = Modif
 
 private fun fmtDelay(ms: Long) = (if (ms > 0) "+" else "") + (if (ms % 1000 == 0L) "${ms / 1000}s" else "${ms}ms")
 
-/** Audio / subtitle delay for this playback. Remote: up/down picks a row, left/right changes it, OK resets the row. */
+/** Audio / subtitle delay for this playback: a slim strip over the bottom of the picture, nothing dimmed. */
 @Composable
-private fun SyncDialog(audio: Long, sub: Long, onAudio: (Long) -> Unit, onSub: (Long) -> Unit, onDismiss: () -> Unit) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        val first = remember { FocusRequester() }
-        LaunchedEffect(Unit) { repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect } }
-        Box(
-            Modifier.fillMaxSize()
-                .onPreviewKeyEvent { ev -> if (ev.type == KeyEventType.KeyDown && ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK) { onDismiss(); true } else false }
-                .clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() },
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Column(
-                Modifier.fillMaxHeight().width(440.dp).background(UiC.Surface)
-                    .clickable(remember { MutableInteractionSource() }, indication = null) {}.padding(20.dp),
-            ) {
-                Text("Sync", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = com.cinedeck.app.ui.Display)
-                Text("Resets to zero for every new playback.", color = UiC.Muted, fontSize = 12.sp)
-                Spacer(Modifier.height(16.dp))
-                DelayRow("Audio delay", audio, 50L, "Sound later  →   ←  sound earlier", Modifier.focusRequester(first), onAudio)
-                Spacer(Modifier.height(12.dp))
-                DelayRow("Subtitle delay", sub, 100L, "Subtitles later  →   ←  subtitles earlier", Modifier, onSub)
-                Spacer(Modifier.height(18.dp))
-                CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Done") { onDismiss() }
-            }
+private fun SyncStrip(audio: Long, sub: Long, onAudio: (Long) -> Unit, onSub: (Long) -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect } }
+    Column(
+        modifier
+            .onPreviewKeyEvent { ev -> if (ev.type == KeyEventType.KeyDown && ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK) { onDismiss(); true } else false }
+            .widthIn(max = 560.dp)
+            .background(Color(0x99000000), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        DelayRow("Audio", audio, 50L, Modifier.focusRequester(first), onAudio)
+        DelayRow("Subtitles", sub, 100L, Modifier, onSub)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("← later / earlier →  ·  OK resets  ·  Back closes", color = UiC.Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+            CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Done") { onDismiss() }
         }
     }
 }
 
 @Composable
-private fun DelayRow(title: String, value: Long, step: Long, hint: String, modifier: Modifier, onChange: (Long) -> Unit) {
+private fun DelayRow(title: String, value: Long, step: Long, modifier: Modifier, onChange: (Long) -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val limit = 30_000L
-    Column(
+    Row(
         modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
@@ -712,20 +708,18 @@ private fun DelayRow(title: String, value: Long, step: Long, hint: String, modif
                 }
             }
             .focusable()
-            .background(if (focused) UiC.Surface2 else Color.Transparent, RoundedCornerShape(12.dp))
-            .border(if (focused) 2.dp else 1.dp, if (focused) UiC.Accent else UiC.Line, RoundedCornerShape(12.dp))
-            .padding(14.dp),
+            .background(if (focused) Color(0x33FFFFFF) else Color.Transparent, RoundedCornerShape(10.dp))
+            .border(if (focused) 2.dp else 1.dp, if (focused) UiC.Accent else Color(0x55FFFFFF), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            CtlChip(Icons.Default.Remove, "−${step}") { onChange((value - step).coerceIn(-limit, limit)) }
-            Text(
-                fmtDelay(value), color = if (value == 0L) UiC.Muted else UiC.Cyan, fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                fontFamily = com.cinedeck.app.ui.Display, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            CtlChip(Icons.Default.Add, "+${step}") { onChange((value + step).coerceIn(-limit, limit)) }
-        }
-        Text(hint + "   ·   OK resets", color = UiC.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(96.dp))
+        CtlChip(Icons.Default.Remove, "") { onChange((value - step).coerceIn(-limit, limit)) }
+        Text(
+            fmtDelay(value), color = if (value == 0L) UiC.Muted else UiC.Cyan, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+            fontFamily = com.cinedeck.app.ui.Display, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        CtlChip(Icons.Default.Add, "") { onChange((value + step).coerceIn(-limit, limit)) }
     }
 }
 
