@@ -681,8 +681,8 @@ private fun SyncStrip(audio: Long, sub: Long, onAudio: (Long) -> Unit, onSub: (L
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        DelayRow("Audio", audio, 50L, Modifier.focusRequester(first), onAudio)
-        DelayRow("Subtitles", sub, 100L, Modifier, onSub)
+        DelayRow("Audio", audio, 250L, Modifier.focusRequester(first), onAudio)
+        DelayRow("Subtitles", sub, 250L, Modifier, onSub)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("← later / earlier →  ·  OK resets  ·  Back closes", color = UiC.Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
             CtlChip(Icons.AutoMirrored.Filled.ArrowBack, "Done") { onDismiss() }
