@@ -12,6 +12,7 @@ object PlayerLog {
     fun init(ctx: Context) { file = File(ctx.filesDir, "player_log.txt") }
 
     fun add(line: String) {
+        android.util.Log.i("ReelDJ", line)
         val f = file ?: return
         runCatching {
             val stamp = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date())

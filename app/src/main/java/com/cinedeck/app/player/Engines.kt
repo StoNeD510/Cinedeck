@@ -139,9 +139,10 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
                 .setExceedAudioConstraintsIfNecessary(true)
                 .setSelectUndeterminedTextLanguage(false),
         )
+        // Read-ahead lives in the Java heap: 80 MB is ~15-20 s of 4K and leaves the collector alone. The link refills it in a blink.
         val load = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(20_000, 120_000, 1_000, 2_500)
-            .setTargetBufferBytes(200 * 1024 * 1024)
+            .setBufferDurationsMs(15_000, 60_000, 1_000, 2_500)
+            .setTargetBufferBytes(80 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
         val p = ExoPlayer.Builder(ctx, renderers)
@@ -153,13 +154,16 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
                     .setLoadErrorHandlingPolicy(object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(12) {
                         override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
                             val base = super.getRetryDelayMsFor(info)
-                            return if (base == C.TIME_UNSET) 1500L else base.coerceAtMost(4000L)
+                            // TIME_UNSET = not a network error (the parser choked on bad bytes): retrying the same read never helps,
+                            // so fail at once and let the player reopen the stream with a fresh parser.
+                            return if (base == C.TIME_UNSET) C.TIME_UNSET else base.coerceAtMost(3000L)
                         }
                     }),
             )
             .build()
         player = p
         pv.player = p
+        p.addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger("ReelDJ-Exo"))
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 lastError = error

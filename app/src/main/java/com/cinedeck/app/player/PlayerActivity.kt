@@ -221,7 +221,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                         reconnects++
                         PlayerLog.add("${e.label}: reopening stream at ${fmt(e.position)} (try $reconnects) after ${exoErr?.errorCodeName}: ${(exoErr?.cause ?: exoErr)?.javaClass?.simpleName} ${exoErr?.cause?.message?.take(80) ?: ""}")
                         buffering = true
-                        switchScope.launch { kotlinx.coroutines.delay(400L * reconnects); if (engine === e) e.reconnect() }
+                        switchScope.launch { kotlinx.coroutines.delay(if (reconnects == 1) 150L else 400L * reconnects); if (engine === e) e.reconnect() }
                     }
                     // Audio output / decoder trouble: try ExoPlayer once more with stereo + platform decoders.
                     kind == "exo" && req.engine != "vlc" && ExoEngine.isAudioOrDecoderError(exoErr) ->
