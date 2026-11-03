@@ -20,6 +20,9 @@ object Http {
     @Volatile var client: OkHttpClient = build(null)
         private set
 
+    /** For video: shares the connection pool but NEVER the disk cache (caching breaks range requests mid-stream). */
+    val streamClient: OkHttpClient get() = client.newBuilder().cache(null).build()
+
     /** Call once at startup: adds a disk cache so catalogs, show details and streams reload instantly. */
     fun init(cacheDir: java.io.File) { client = build(cacheDir) }
 
@@ -170,7 +173,7 @@ object Addons {
             fun fetch(range: String): Pair<ByteArray, String?> {
                 val b = Request.Builder().url(url).header("User-Agent", "ReelDJ/0.5").header("Range", range)
                 headers.forEach { (k, v) -> b.header(k, v) }
-                Http.client.newCall(b.build()).execute().use { r ->
+                Http.streamClient.newCall(b.build()).execute().use { r ->
                     if (r.code != 206) throw IOException("No range support (${r.code})")
                     return r.body!!.bytes() to r.header("Content-Range")
                 }

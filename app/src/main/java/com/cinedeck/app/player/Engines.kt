@@ -94,7 +94,7 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     override val view: View get() = pv
 
     override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>, audioLangs: List<String>) {
-        val http = OkHttpDataSource.Factory(Http.client).setDefaultRequestProperties(headers)
+        val http = OkHttpDataSource.Factory(Http.streamClient).setDefaultRequestProperties(headers)
         headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { http.setUserAgent(it.value) }
         val renderers = object : DefaultRenderersFactory(ctx) {
             // Audio delay: the video renderer is told the clock is ahead/behind, so the picture moves relative to the sound.
@@ -356,7 +356,8 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         /** Network / source problems: reconnect rather than change player. */
         fun isNetworkError(e: PlaybackException?): Boolean {
             val c = e?.errorCode ?: return false
-            return c in 2000..2999 || c == PlaybackException.ERROR_CODE_TIMEOUT || c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+            // 2xxx = network/IO; 3xxx = parsing (a corrupted read mid-stream looks like a malformed file). Both: reopen and carry on.
+            return c in 2000..3999 || c == PlaybackException.ERROR_CODE_TIMEOUT || c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
         }
 
         /** Audio-output or decoder problems: worth one retry in safe mode before giving up on ExoPlayer. */
