@@ -219,7 +219,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     // Connection dropped mid-stream: pick up where it stopped, don't change player.
                     e is ExoEngine && ExoEngine.isNetworkError(exoErr) && reconnects < 6 -> {
                         reconnects++
-                        PlayerLog.add("${e.label}: reopening stream at ${fmt(e.position)} (try $reconnects)")
+                        PlayerLog.add("${e.label}: reopening stream at ${fmt(e.position)} (try $reconnects) after ${exoErr?.errorCodeName}: ${(exoErr?.cause ?: exoErr)?.javaClass?.simpleName} ${exoErr?.cause?.message?.take(80) ?: ""}")
                         buffering = true
                         switchScope.launch { kotlinx.coroutines.delay(400L * reconnects); if (engine === e) e.reconnect() }
                     }
@@ -303,19 +303,26 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             }
             if (++tick % 20 == 0) save()
             if (tick % 240 == 0 && playing && !buffering) reconnects = 0 // two minutes of smooth playback forgives earlier blips
-            // Stalled mid-stream (spinner for 25 s): reopen the stream; if that keeps failing, hand over to VLC.
+            // Rebuffering mid-stream: note how long each one lasts; after 40 s with no data, reopen the stream,
+            // and if that keeps happening hand over to VLC.
             if (started && buffering && error == null) {
                 if (stallSince == 0L) stallSince = System.currentTimeMillis()
-                else if (System.currentTimeMillis() - stallSince > 25_000) {
+                else if (System.currentTimeMillis() - stallSince > 40_000) {
                     stallSince = 0L
                     val e = engine
                     if (e is ExoEngine && reconnects < 6) {
                         reconnects++
-                        PlayerLog.add("${e.label}: no data for 25 s at ${fmt(e.position)} — reopening (try $reconnects)")
+                        PlayerLog.add("${e.label}: no data for 40 s at ${fmt(e.position)} — reopening (try $reconnects)")
                         e.reconnect()
                     } else if (kind != "vlc" && req.engine == "auto") switchEngine("vlc", "Stream keeps stalling — switching to VLC")
                 }
-            } else stallSince = 0L
+            } else {
+                if (stallSince != 0L) {
+                    val secs = (System.currentTimeMillis() - stallSince) / 1000
+                    if (secs >= 2) PlayerLog.add("${engine?.label ?: kind}: rebuffered ${secs}s at ${fmt(pos)}" + ((engine as? ExoEngine)?.let { " (buffer now ${it.bufferedAheadMs / 1000}s ahead)" } ?: ""))
+                }
+                stallSince = 0L
+            }
             if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
         }
     }

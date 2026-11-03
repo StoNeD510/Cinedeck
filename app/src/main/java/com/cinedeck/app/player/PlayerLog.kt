@@ -14,9 +14,9 @@ object PlayerLog {
     fun add(line: String) {
         val f = file ?: return
         runCatching {
-            val stamp = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
+            val stamp = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date())
             val lines = (if (f.exists()) f.readLines() else emptyList()) + "$stamp  $line"
-            f.writeText(lines.takeLast(12).joinToString("\n"))
+            f.writeText(lines.takeLast(20).joinToString("\n"))
         }
     }
 

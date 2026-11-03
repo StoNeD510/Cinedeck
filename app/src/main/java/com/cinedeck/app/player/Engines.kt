@@ -265,6 +265,8 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     override fun pause() { player?.pause() }
     override val isPlaying get() = player?.isPlaying == true
     override val isBuffering get() = player?.playbackState == Player.STATE_BUFFERING
+    /** How far ahead of the playhead the buffer reaches, in ms. */
+    val bufferedAheadMs get() = player?.let { it.bufferedPosition - it.currentPosition } ?: 0L
     override val position get() = player?.currentPosition ?: 0
     override val duration get() = player?.duration?.takeIf { it != C.TIME_UNSET } ?: 0
     override fun seekTo(ms: Long) { player?.seekTo(ms.coerceAtLeast(0)) }
