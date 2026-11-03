@@ -469,7 +469,8 @@ class VlcEngine(ctx: Context) : Engine {
     override fun release() {
         mp.setEventListener(null)
         runCatching { mp.stop() }
-        mp.detachViews()
+        runCatching { mp.detachViews() }
+        runCatching { for (i in 0 until layout.childCount) layout.getChildAt(i).visibility = View.GONE }
         mp.release()
         lib.release()
     }

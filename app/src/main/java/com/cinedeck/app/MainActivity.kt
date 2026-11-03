@@ -93,6 +93,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (android.os.Build.VERSION.SDK_INT >= 26) window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+        if (android.os.Build.VERSION.SDK_INT >= 34) runCatching { window.setDesiredHdrHeadroom(1f) }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleAddonLink(intent)

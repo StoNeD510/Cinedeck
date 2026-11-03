@@ -231,7 +231,12 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             engine = e
             engineKind = kind
             (ctx as? PlayerActivity)?.teardown = {
-                if (engine === e) { if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration); runCatching { e.release() }; engine = null }
+                if (engine === e) {
+                    if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration)
+                    runCatching { e.release() }
+                    runCatching { hideSurfaces(e.view); (e.view.parent as? android.view.ViewGroup)?.removeView(e.view) }
+                    engine = null
+                }
             }
             e.start(req.url, req.headers, subs, startAt, langs, audioLangs)
             e.setResize(resize)
@@ -269,6 +274,16 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         }
         lifecycle.addObserver(obs)
         onDispose { lifecycle.removeObserver(obs) }
+    }
+
+    // If nothing has played after 45 s, stop spinning and offer a way out.
+    LaunchedEffect(kind, started) {
+        if (started || kind == "none") return@LaunchedEffect
+        kotlinx.coroutines.delay(45_000)
+        if (!started && error == null) {
+            PlayerLog.add("${engine?.label ?: kind}: stuck loading for 45 s  [${req.name} ${req.filename ?: ""}]")
+            error = "The stream never started. The link may be rate-limited or expired; try another stream, or the other player."
+        }
     }
 
     // Poll player state, save progress every 10s, auto-hide controls.
@@ -617,6 +632,12 @@ private fun NextCard(
             }
         }
     }
+}
+
+/** Hides every video surface under a view, so the display drops HDR mode even before the window goes away. */
+private fun hideSurfaces(v: android.view.View) {
+    if (v is android.view.SurfaceView || v is android.view.TextureView) { v.visibility = android.view.View.GONE; return }
+    if (v is android.view.ViewGroup) for (i in 0 until v.childCount) hideSurfaces(v.getChildAt(i))
 }
 
 /** Full-screen artwork shown while the stream connects, instead of player buttons. */

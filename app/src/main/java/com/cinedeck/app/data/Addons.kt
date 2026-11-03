@@ -20,8 +20,26 @@ object Http {
     @Volatile var client: OkHttpClient = build(null)
         private set
 
-    /** For video: shares the connection pool but NEVER the disk cache (caching breaks range requests mid-stream). */
-    val streamClient: OkHttpClient get() = client.newBuilder().cache(null).build()
+    /**
+     * For video: no disk cache, and a guard that refuses anything that isn't the file we asked for
+     * (an HTML error/rate-limit page returned with status 200, or a range request answered from byte 0),
+     * turning it into a retryable error instead of letting the player parse junk as video.
+     */
+    val streamClient: OkHttpClient by lazy {
+        client.newBuilder().cache(null).addNetworkInterceptor { chain ->
+            val req = chain.request()
+            val res = chain.proceed(req)
+            val type = res.header("Content-Type")?.lowercase().orEmpty()
+            val wantsRange = req.header("Range")?.let { !it.startsWith("bytes=0-") } == true
+            val badType = res.isSuccessful && (type.startsWith("text/html") || type.startsWith("application/json") || type.startsWith("text/plain"))
+            val ignoredRange = wantsRange && res.code == 200
+            if (badType || ignoredRange) {
+                com.cinedeck.app.player.PlayerLog.add("Stream guard: server sent ${res.code} ${type.ifBlank { "?" }} for range ${req.header("Range") ?: "none"} — retried")
+                res.close()
+                res.newBuilder().code(503).message("Not the video (guard)").body(okhttp3.ResponseBody.create(null, ByteArray(0))).build()
+            } else res
+        }.build()
+    }
 
     /** Call once at startup: adds a disk cache so catalogs, show details and streams reload instantly. */
     fun init(cacheDir: java.io.File) { client = build(cacheDir) }
