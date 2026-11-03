@@ -3,7 +3,7 @@ package com.cinedeck.app.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -156,7 +156,7 @@ fun HomeScreen(
     if (wide) Auditorium()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 16.dp, vertical = if (wide) 2.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (!wide) Box(Modifier.padding(end = 12.dp)) { Logo(20.sp, mark = false) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("All", filter == "all") { filter = "all" }
@@ -264,11 +264,22 @@ private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay
     }
     val shape = RoundedCornerShape(if (wide) 14.dp else 0.dp)
     // "The screen": a lit 16:9 panel in the middle of the auditorium, with a soft accent glow and a bright top edge.
-    Box(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 0.dp, vertical = if (wide) 10.dp else 0.dp), contentAlignment = Alignment.Center) {
+    // Sized from the screen: tall enough to matter, short enough that the first row of tiles still shows underneath.
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val heroH = (conf.screenHeightDp.dp - 190.dp).coerceIn(220.dp, 400.dp)
+    val heroW = minOf(heroH * 16f / 9f, conf.screenWidthDp.dp - 112.dp)
+    val glow = C.Accent
+    Box(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 0.dp, vertical = if (wide) 12.dp else 0.dp), contentAlignment = Alignment.Center) {
         Box(
-            Modifier.fillMaxWidth()
-                .then(if (wide) Modifier.heightIn(max = 400.dp).aspectRatio(16f / 9f) else Modifier.aspectRatio(0.72f))
-                .then(if (wide) Modifier.shadow(28.dp, shape, ambientColor = C.Accent, spotColor = C.Accent).border(1.dp, Color(0x29FFFFFF), shape) else Modifier)
+            (if (wide) Modifier.width(heroW).height(heroH) else Modifier.fillMaxWidth().aspectRatio(0.72f))
+                .then(if (wide) Modifier.drawBehind {
+                    // Soft accent glow: a few widening rounded outlines fading out.
+                    val r = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
+                    for (i in 1..6) {
+                        val d = i * 3.dp.toPx()
+                        drawRoundRect(glow.copy(alpha = 0.07f - i * 0.009f), topLeft = androidx.compose.ui.geometry.Offset(-d, -d), size = androidx.compose.ui.geometry.Size(size.width + 2 * d, size.height + 2 * d), cornerRadius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+                    }
+                }.border(1.dp, Color(0x29FFFFFF), shape) else Modifier)
                 .clip(shape),
         ) {
             HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
@@ -284,7 +295,7 @@ private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay
                     Column(
                         Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
                             .padding(if (wide) 22.dp else 16.dp)
-                            .then(if (wide) Modifier.widthIn(max = 520.dp) else Modifier.fillMaxWidth())
+                            .then(if (wide) Modifier.widthIn(max = 460.dp) else Modifier.fillMaxWidth())
                             .then(if (wide) Modifier.background(Color(0x8C0A0A0E), RoundedCornerShape(12.dp)).border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 18.dp) else Modifier),
                         horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
                     ) {
@@ -294,10 +305,6 @@ private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay
                         else Text(m.title, color = Color.White, fontFamily = Display, fontSize = if (wide) 36.sp else 28.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 40.sp else 30.sp, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(6.dp))
                         Text(m.line, color = C.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (wide) m.description?.let {
-                            Spacer(Modifier.height(8.dp))
-                            Text(it, color = C.Text, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             HeroButton(m.primary, Icons.Default.PlayArrow, primary = true) {

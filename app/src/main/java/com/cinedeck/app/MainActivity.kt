@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -43,7 +44,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -252,7 +252,7 @@ private fun TopTabs(route: String, onGo: (String) -> Unit) {
                 val sel = route == t.route
                 com.cinedeck.app.ui.FocusBox(onClick = { onGo(t.route) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp), focusScale = 1.05f) {
                     androidx.compose.foundation.layout.Column(
-                        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max).padding(horizontal = 14.dp, vertical = 8.dp),
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                     ) {
                         Text(
@@ -260,10 +260,8 @@ private fun TopTabs(route: String, onGo: (String) -> Unit) {
                             letterSpacing = 1.sp, fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
                         )
                         Spacer(Modifier.size(5.dp))
-                        Box(
-                            Modifier.fillMaxWidth().height(2.dp)
-                                .then(if (sel) Modifier.shadow(8.dp, androidx.compose.foundation.shape.RoundedCornerShape(1.dp), ambientColor = C.Accent, spotColor = C.Accent).background(C.Accent) else Modifier),
-                        )
+                        Box(Modifier.fillMaxWidth().height(2.dp).background(if (sel) C.Accent else androidx.compose.ui.graphics.Color.Transparent))
+                        if (sel) Box(Modifier.fillMaxWidth().height(6.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(C.Accent.copy(alpha = 0.45f), androidx.compose.ui.graphics.Color.Transparent))))
                     }
                 }
             }
