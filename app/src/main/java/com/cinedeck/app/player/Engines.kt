@@ -39,7 +39,7 @@ interface Engine {
     val view: View
     var onError: (String) -> Unit
     var onEnded: () -> Unit
-    fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>)
+    fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>, audioLangs: List<String> = emptyList())
     fun play()
     fun pause()
     val isPlaying: Boolean
@@ -93,7 +93,7 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     }
     override val view: View get() = pv
 
-    override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>) {
+    override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>, audioLangs: List<String>) {
         val http = OkHttpDataSource.Factory(Http.client).setDefaultRequestProperties(headers)
         headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { http.setUserAgent(it.value) }
         val renderers = object : DefaultRenderersFactory(ctx) {
@@ -133,6 +133,7 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         selector.setParameters(
             selector.buildUponParameters()
                 .setPreferredTextLanguages(*preferLangs.toTypedArray())
+                .setPreferredAudioLanguages(*audioLangs.toTypedArray())
                 .setExceedRendererCapabilitiesIfNecessary(true)
                 .setExceedVideoConstraintsIfNecessary(true)
                 .setExceedAudioConstraintsIfNecessary(true)
@@ -405,7 +406,7 @@ class VlcEngine(ctx: Context) : Engine {
     override val view: View get() = layout
     private var buffering = 0f
 
-    override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>) {
+    override fun start(url: String, headers: Map<String, String>, subs: List<Subtitle>, startMs: Long, preferLangs: List<String>, audioLangs: List<String>) {
         mp.attachViews(layout, null, true, false)
         val media = Media(lib, Uri.parse(url))
         media.setHWDecoderEnabled(true, false)
@@ -417,6 +418,7 @@ class VlcEngine(ctx: Context) : Engine {
         }
         if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
         if (preferLangs.isNotEmpty()) media.addOption(":sub-language=${preferLangs.joinToString(",")}")
+        if (audioLangs.isNotEmpty()) media.addOption(":audio-language=${audioLangs.joinToString(",")}")
         mp.media = media
         media.release()
         subs.forEach { mp.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(it.url), false) }

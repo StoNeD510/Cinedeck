@@ -192,6 +192,7 @@ data class Progress(
 data class Settings(
     val engine: String = "auto", // auto | exo | vlc | external
     val subtitleLangs: String = "eng",
+    val audioLangs: String = "eng",
     val autoSubtitles: Boolean = true,
     val rdToken: String = "",
     val navPosition: String = "top", // side | top (TV and tablets)

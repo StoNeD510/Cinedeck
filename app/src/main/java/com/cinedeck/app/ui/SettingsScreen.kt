@@ -244,6 +244,9 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                         colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.White),
                     )
                 }
+                var alangs by remember { mutableStateOf(data.settings.audioLangs) }
+                RemoteTextField(alangs, { alangs = it; Store.updateSettings { s -> s.copy(audioLangs = it) } }, "Audio languages, in order of preference (e.g. eng, jpn)")
+                Text("Files with several audio tracks start in the first language listed that they have.", color = C.Muted, fontSize = 12.sp)
                 RemoteTextField(langs, { langs = it; Store.updateSettings { s -> s.copy(subtitleLangs = it) } }, "Subtitle languages (e.g. eng, spa, tgl)")
             }
         }

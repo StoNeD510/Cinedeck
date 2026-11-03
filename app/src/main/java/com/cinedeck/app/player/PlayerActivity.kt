@@ -141,6 +141,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val settings = Store.settings
     val langs = settings.subtitleLangs.split(",", " ").map { it.trim() }.filter { it.isNotBlank() }
+    val audioLangs = settings.audioLangs.split(",", " ").map { it.trim() }.filter { it.isNotBlank() }
     var kind by remember { mutableStateOf(if (req.engine == "vlc") "vlc" else "exo") }
     var subs by remember { mutableStateOf<List<Subtitle>>(emptyList()) }
     var engine by remember { mutableStateOf<Engine?>(null) }
@@ -222,7 +223,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     // Audio output / decoder trouble: try ExoPlayer once more with stereo + platform decoders.
                     kind == "exo" && req.engine != "vlc" && ExoEngine.isAudioOrDecoderError(exoErr) ->
                         switchEngine("exosafe", "Audio problem, retrying in stereo…")
-                    kind != "vlc" && req.engine == "auto" -> switchEngine("vlc", "ExoPlayer couldn't play this, switching to VLC")
+                    kind != "vlc" && req.engine == "auto" -> switchEngine("vlc", "ExoPlayer: ${exoErr?.errorCodeName ?: msg.take(40)} — switching to VLC")
                     else -> error = msg
                 }
             }
@@ -232,7 +233,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             (ctx as? PlayerActivity)?.teardown = {
                 if (engine === e) { if (!finished && e.duration > 0) Store.saveProgress(req, e.position, e.duration); runCatching { e.release() }; engine = null }
             }
-            e.start(req.url, req.headers, subs, startAt, langs)
+            e.start(req.url, req.headers, subs, startAt, langs, audioLangs)
             e.setResize(resize)
             if (audioDelay != 0L) e.setAudioDelay(audioDelay)
             if (subDelay != 0L) e.setSubtitleDelay(subDelay)
@@ -283,6 +284,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 if (!started && e.isPlaying && e.position > 300) { started = true; Store.startWatching(req) }
             }
             if (++tick % 20 == 0) save()
+            if (tick % 240 == 0 && playing && !buffering) reconnects = 0 // two minutes of smooth playback forgives earlier blips
             if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
         }
     }
