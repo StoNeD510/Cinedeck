@@ -117,6 +117,10 @@ class PlayerActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private val request = mutableStateOf<PlayRequest?>(null)
+
+    private fun decode(i: android.content.Intent?) = i?.getStringExtra(PlayerLauncher.EXTRA)?.let { runCatching { AppJson.decodeFromString(PlayRequest.serializer(), it) }.getOrNull() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -125,9 +129,25 @@ class PlayerActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        val req = intent.getStringExtra(PlayerLauncher.EXTRA)?.let { AppJson.decodeFromString(PlayRequest.serializer(), it) }
+        val req = decode(intent)
         if (req == null) { finish(); return }
-        setContent { CineTheme { PlayerScreen(req, onExit = { finish() }) } }
+        request.value = req
+        setContent {
+            CineTheme {
+                val r = request.value ?: return@CineTheme
+                // A new request (next episode) replaces the screen wholesale: the old engine is released, a fresh one starts.
+                key(r.videoId) { PlayerScreen(r, onExit = { finish() }) }
+            }
+        }
+    }
+
+    /** The player is single-top: playing the next episode lands here instead of opening a second player. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val req = decode(intent) ?: return
+        teardown?.invoke(); teardown = null
+        request.value = req
     }
 }
 
@@ -374,8 +394,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         finished = true
         Store.markWatched(req)
         Store.startWatching(n) // so Continue Watching points at the new episode right away
-        PlayerLauncher.play(ctx, n.copy(engine = Store.settings.engine))
-        onExit()
+        PlayerLauncher.play(ctx, n.copy(engine = Store.settings.engine)) // single-top: delivered to this activity, which swaps the episode in place
     }
     LaunchedEffect(wantNext, nextState) {
         if (wantNext && nextState == "ready") playNext()
