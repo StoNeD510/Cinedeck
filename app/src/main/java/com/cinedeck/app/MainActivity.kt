@@ -41,6 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -237,27 +240,40 @@ private fun AppRoot(wide: Boolean) {
 /** Horizontal tab bar across the top (Settings → Navigation bar → Top). */
 @Composable
 private fun TopTabs(route: String, onGo: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(C.Bg).padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
-    ) {
-        Box(Modifier.padding(end = 22.dp)) { com.cinedeck.app.ui.Logo(22.sp) }
-        tabs.forEach { t ->
-            val sel = route == t.route
-            com.cinedeck.app.ui.FocusBox(onClick = { onGo(t.route) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50), focusScale = 1.05f) {
-                Row(
-                    Modifier.background(if (sel) C.Surface2 else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    if (sel) { Box(Modifier.size(6.dp).background(C.Accent, androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.size(8.dp)) }
-                    Icon(t.icon, null, tint = if (sel) C.Text else C.Muted, modifier = Modifier.size(19.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(t.label, color = if (sel) C.Text else C.Muted, fontSize = 15.sp, fontFamily = com.cinedeck.app.ui.Display,
-                        fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium)
+    // Premiere look: wordmark left, plain text tabs in the middle (the active one lit by a glowing underline), clock right.
+    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp)) {
+        Box(Modifier.align(androidx.compose.ui.Alignment.CenterStart)) { com.cinedeck.app.ui.Logo(20.sp) }
+        Row(
+            Modifier.align(androidx.compose.ui.Alignment.Center),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        ) {
+            tabs.forEach { t ->
+                val sel = route == t.route
+                com.cinedeck.app.ui.FocusBox(onClick = { onGo(t.route) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp), focusScale = 1.05f) {
+                    androidx.compose.foundation.layout.Column(
+                        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            t.label, color = if (sel) C.Text else C.Muted, fontSize = 14.sp, fontFamily = com.cinedeck.app.ui.Display,
+                            letterSpacing = 1.sp, fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                        )
+                        Spacer(Modifier.size(5.dp))
+                        Box(
+                            Modifier.fillMaxWidth().height(2.dp)
+                                .then(if (sel) Modifier.shadow(8.dp, androidx.compose.foundation.shape.RoundedCornerShape(1.dp), ambientColor = C.Accent, spotColor = C.Accent).background(C.Accent) else Modifier),
+                        )
+                    }
                 }
             }
         }
+        var now by remember { androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(15_000); now = System.currentTimeMillis() } }
+        Text(
+            remember { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT) }.format(java.util.Date(now)),
+            color = C.Muted, fontSize = 13.sp, modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd),
+        )
     }
 }
 

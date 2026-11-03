@@ -131,7 +131,12 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = Heading, fontSize = 19.sp, modifier = Modifier.weight(1f))
+        Box(Modifier.width(18.dp).height(2.dp).background(C.Cyan))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            title.uppercase(), color = C.Text, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 2.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
         if (onMore != null) FocusBox(onClick = onMore, shape = RoundedCornerShape(50)) {
             Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("See all", color = C.Muted, fontSize = 13.sp)

@@ -3,6 +3,8 @@ package com.cinedeck.app.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -126,7 +128,32 @@ fun HomeScreen(
     }
     val watchedIds = remember(data.progress) { data.progress.values.filter { it.watched && it.type == "movie" }.map { it.metaId }.toSet() }
 
+    // Hero pages: what you're in the middle of first (Resume), then the featured titles.
+    val heroPages = remember(hero, continueItems, followed) {
+        val resume = continueItems.take(2).map { c ->
+            val m = followed[c.metaId]
+            HeroPage(
+                kicker = if (c.isUpNext) "UP NEXT" else "CONTINUE WATCHING", title = c.name, image = m?.background ?: c.image ?: c.poster, logo = m?.logo,
+                line = listOfNotNull(
+                    c.season?.let { epCode(it, c.episode) + (c.episodeTitle?.let { t -> "  ·  $t" } ?: "") },
+                    if (c.fraction > 0.02f) "${(c.fraction * 100).toInt()}% watched" else null,
+                ).joinToString("   ·   "),
+                description = null, progress = c.fraction, type = c.type, metaId = c.metaId, videoId = c.videoId, primary = "Resume", meta = m,
+            )
+        }
+        val featured = hero.map { m ->
+            HeroPage(
+                kicker = if (m.type == "series") "NOW SHOWING  ·  SERIES" else "NOW SHOWING", title = m.name, image = m.background, logo = m.logo,
+                line = listOfNotNull(m.imdbRating?.let { "★ $it" }, m.yearText, m.allGenres.take(3).joinToString(" · ").ifBlank { null }).joinToString("   ·   "),
+                description = m.description, progress = 0f, type = m.type, metaId = m.id, videoId = if (m.type == "movie") m.id else null, primary = "Play", meta = m,
+            )
+        }
+        (resume + featured).distinctBy { it.metaId }.take(8)
+    }
+
     Screen("home") {
+    Box(Modifier.fillMaxSize()) {
+    if (wide) Auditorium()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -144,8 +171,8 @@ fun HomeScreen(
 
         if (rows == null) {
             item { Loading(Modifier.fillMaxWidth().height(320.dp)) }
-        } else if (hero.isNotEmpty()) {
-            item { Hero(hero, onOpen, onPlay, tv || wide) }
+        } else if (heroPages.isNotEmpty()) {
+            item { Hero(heroPages, onOpen, onPlay, tv || wide) }
         }
 
         if (continueItems.isNotEmpty()) {
@@ -191,74 +218,107 @@ fun HomeScreen(
             item(key = "r_" + r.key) { PosterRow(r.items, { onOpen(it.type, it.id) }) }
         }
     }
+    }
 }
+}
+
+/** One page of the hero carousel: either something to resume or a featured title. */
+data class HeroPage(
+    val kicker: String, val title: String, val image: String?, val logo: String?, val line: String, val description: String?,
+    val progress: Float, val type: String, val metaId: String, val videoId: String?, val primary: String, val meta: Meta?,
+)
+
+/**
+ * The auditorium behind the home screen: a soft spotlight from the top, faint projector beams and a cyan rim light
+ * along the bottom. Drawn once, under everything.
+ */
+@Composable
+private fun Auditorium() {
+    val accent = C.Accent
+    val cyan = C.Cyan
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        val w = size.width; val h = size.height
+        drawRect(Brush.radialGradient(listOf(accent.copy(alpha = 0.13f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w / 2, 0f), radius = w * 0.55f))
+        drawRect(Brush.verticalGradient(0.75f to Color.Transparent, 1f to cyan.copy(alpha = 0.07f)))
+        // Projector beams: three thin wedges fanning down from the top centre.
+        listOf(-0.32f, 0f, 0.32f).forEach { spread ->
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w / 2 - 14f, 0f); lineTo(w / 2 + 14f, 0f)
+                lineTo(w / 2 + w * (spread + 0.09f), h); lineTo(w / 2 + w * (spread - 0.09f), h); close()
+            }
+            drawPath(p, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.05f), Color.Transparent)))
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Hero(items: List<Meta>, onOpen: (String, String) -> Unit, onPlay: (String, String, String) -> Unit, wide: Boolean) {
+private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay: (String, String, String) -> Unit, wide: Boolean) {
     val pager = rememberPagerState { items.size }
     val data by Store.data.collectAsState()
     LaunchedEffect(pager, items.size) {
         while (true) {
-            delay(7000)
+            delay(8000)
             if (!pager.isScrollInProgress && items.isNotEmpty()) pager.animateScrollToPage((pager.currentPage + 1) % items.size)
         }
     }
-    Box(Modifier.fillMaxWidth().then(if (wide) Modifier.height(380.dp) else Modifier.aspectRatio(0.72f))) {
-        HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
-            val m = items[page]
-            Box(Modifier.fillMaxSize()) {
-                AsyncImage(
-                    model = if (wide) m.background else (m.poster ?: m.background), contentDescription = null,
-                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-                    alignment = if (wide) Alignment.TopCenter else Alignment.Center,
-                )
-                if (wide) Box(Modifier.fillMaxHeight().fillMaxWidth(0.65f).background(LeftFade))
-                Box(Modifier.fillMaxSize().background(BottomFade))
-                Column(
-                    Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
-                        .padding(horizontal = 24.dp, vertical = 20.dp)
-                        .then(if (wide) Modifier.widthIn(max = 520.dp) else Modifier.fillMaxWidth()),
-                    horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        if (m.type == "series") "FEATURED SERIES" else "FEATURED", color = C.Cyan, fontSize = 11.sp, fontFamily = Display, fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp,
-                        modifier = Modifier.border(1.dp, C.Cyan, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+    val shape = RoundedCornerShape(if (wide) 14.dp else 0.dp)
+    // "The screen": a lit 16:9 panel in the middle of the auditorium, with a soft accent glow and a bright top edge.
+    Box(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 0.dp, vertical = if (wide) 10.dp else 0.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxWidth()
+                .then(if (wide) Modifier.heightIn(max = 400.dp).aspectRatio(16f / 9f) else Modifier.aspectRatio(0.72f))
+                .then(if (wide) Modifier.shadow(28.dp, shape, ambientColor = C.Accent, spotColor = C.Accent).border(1.dp, Color(0x29FFFFFF), shape) else Modifier)
+                .clip(shape),
+        ) {
+            HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
+                val m = items[page]
+                Box(Modifier.fillMaxSize().background(C.Surface)) {
+                    AsyncImage(
+                        model = if (wide) m.image else (m.meta?.poster ?: m.image), contentDescription = null,
+                        contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                        alignment = if (wide) Alignment.TopCenter else Alignment.Center,
                     )
-                    Spacer(Modifier.height(10.dp))
-                    if (m.logo != null) AsyncImage(m.logo, m.name, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 72.dp else 60.dp).widthIn(max = 300.dp))
-                    else Text(m.name, color = Color.White, fontFamily = Display, fontSize = if (wide) 44.sp else 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 46.sp else 32.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        m.imdbRating?.let {
-                            Icon(Icons.Default.Star, null, tint = C.Gold, modifier = Modifier.size(14.dp))
-                            Text(it, color = Color.White, fontSize = 13.sp)
-                        }
-                        m.yearText?.let { Text(it, color = C.Muted, fontSize = 13.sp) }
-                        Text(m.allGenres.take(3).joinToString(" · "), color = C.Muted, fontSize = 13.sp, maxLines = 1)
-                    }
-                    if (wide) m.description?.let {
+                    if (!wide) Box(Modifier.fillMaxSize().background(BottomFade))
+                    // Glass info plate over the lower-left corner of the picture.
+                    Column(
+                        Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
+                            .padding(if (wide) 22.dp else 16.dp)
+                            .then(if (wide) Modifier.widthIn(max = 520.dp) else Modifier.fillMaxWidth())
+                            .then(if (wide) Modifier.background(Color(0x8C0A0A0E), RoundedCornerShape(12.dp)).border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 18.dp) else Modifier),
+                        horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
+                    ) {
+                        Text(m.kicker, color = C.Cyan, fontSize = 11.sp, fontFamily = Display, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = C.Text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        HeroButton("Play", Icons.Default.PlayArrow, primary = true) {
-                            if (m.type == "movie") onPlay(m.type, m.id, m.id) else onOpen(m.type, m.id)
+                        if (m.logo != null) AsyncImage(m.logo, m.title, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 64.dp else 56.dp).widthIn(max = 300.dp))
+                        else Text(m.title, color = Color.White, fontFamily = Display, fontSize = if (wide) 36.sp else 28.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 40.sp else 30.sp, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(6.dp))
+                        Text(m.line, color = C.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (wide) m.description?.let {
+                            Spacer(Modifier.height(8.dp))
+                            Text(it, color = C.Text, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
-                        val inList = data.library.any { it.id == m.id }
-                        HeroButton(if (inList) "In My List" else "My List", if (inList) Icons.Default.Check else Icons.Default.Add) { Store.toggleLibrary(m) }
-                        HeroButton("Details", null) { onOpen(m.type, m.id) }
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HeroButton(m.primary, Icons.Default.PlayArrow, primary = true) {
+                                if (m.videoId != null) onPlay(m.type, m.metaId, m.videoId) else onOpen(m.type, m.metaId)
+                            }
+                            m.meta?.let { meta ->
+                                val inList = data.library.any { it.id == meta.id }
+                                HeroButton(if (inList) "In My List" else "My List", if (inList) Icons.Default.Check else Icons.Default.Add) { Store.toggleLibrary(meta) }
+                            }
+                            HeroButton("Details", null) { onOpen(m.type, m.metaId) }
+                        }
                     }
+                    if (m.progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(m.progress).height(3.dp).background(C.Accent))
                 }
             }
-        }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            repeat(items.size) { i ->
-                Box(Modifier.size(if (i == pager.currentPage) 16.dp else 6.dp, 4.dp).clip(RoundedCornerShape(2.dp))
-                    .background(if (i == pager.currentPage) C.Accent else Color(0x66FFFFFF)))
+            if (wide) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp).background(Color(0x4DFFFFFF)))
+            Row(Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(items.size) { i ->
+                    Box(Modifier.size(if (i == pager.currentPage) 16.dp else 6.dp, 4.dp).clip(RoundedCornerShape(2.dp))
+                        .background(if (i == pager.currentPage) C.Accent else Color(0x66FFFFFF)))
+                }
             }
         }
     }
