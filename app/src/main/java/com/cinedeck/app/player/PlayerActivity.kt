@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -193,6 +194,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
 
     val switchScope = androidx.compose.runtime.rememberCoroutineScope()
     var reconnects by remember { mutableIntStateOf(0) }
+    var stallSince by remember { mutableLongStateOf(0L) }
     var audioDelay by remember { mutableLongStateOf(0L) } // ms, this playback only
     var subDelay by remember { mutableLongStateOf(0L) }
     fun switchEngine(to: String, reason: String? = null) {
@@ -217,8 +219,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                     // Connection dropped mid-stream: pick up where it stopped, don't change player.
                     e is ExoEngine && ExoEngine.isNetworkError(exoErr) && reconnects < 6 -> {
                         reconnects++
-                        Toast.makeText(ctx, "Connection hiccup, reconnecting…", Toast.LENGTH_SHORT).show()
-                        switchScope.launch { kotlinx.coroutines.delay(800L * reconnects); if (engine === e) e.reconnect() }
+                        PlayerLog.add("${e.label}: reopening stream at ${fmt(e.position)} (try $reconnects)")
+                        buffering = true
+                        switchScope.launch { kotlinx.coroutines.delay(400L * reconnects); if (engine === e) e.reconnect() }
                     }
                     // Audio output / decoder trouble: try ExoPlayer once more with stereo + platform decoders.
                     kind == "exo" && req.engine != "vlc" && ExoEngine.isAudioOrDecoderError(exoErr) ->
@@ -300,6 +303,19 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             }
             if (++tick % 20 == 0) save()
             if (tick % 240 == 0 && playing && !buffering) reconnects = 0 // two minutes of smooth playback forgives earlier blips
+            // Stalled mid-stream (spinner for 25 s): reopen the stream; if that keeps failing, hand over to VLC.
+            if (started && buffering && error == null) {
+                if (stallSince == 0L) stallSince = System.currentTimeMillis()
+                else if (System.currentTimeMillis() - stallSince > 25_000) {
+                    stallSince = 0L
+                    val e = engine
+                    if (e is ExoEngine && reconnects < 6) {
+                        reconnects++
+                        PlayerLog.add("${e.label}: no data for 25 s at ${fmt(e.position)} — reopening (try $reconnects)")
+                        e.reconnect()
+                    } else if (kind != "vlc" && req.engine == "auto") switchEngine("vlc", "Stream keeps stalling — switching to VLC")
+                }
+            } else stallSince = 0L
             if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
         }
     }
@@ -338,8 +354,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     val nearEnd = dur > 60_000 && pos >= dur * 0.93
     val prefetch = dur > 60_000 && pos >= dur * 0.80
     val showNext = nextVideo != null && !nextDismissed && (nearEnd || ended) && error == null
-    LaunchedEffect(prefetch || showNext, nextVideo) {
-        if ((prefetch || showNext) && nextVideo != null && nextState == "idle") {
+    var wantNext by remember { mutableStateOf(false) } // Next-episode button pressed before the stream was found
+    LaunchedEffect(prefetch || showNext || wantNext, nextVideo) {
+        if ((prefetch || showNext || wantNext) && nextVideo != null && nextState == "idle") {
             nextState = "finding"
             nextReq = runCatching { NextEpisode.resolve(req, nextVideo!!) }.getOrNull()
             nextState = if (nextReq != null) "ready" else "none"
@@ -352,6 +369,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         Store.startWatching(n) // so Continue Watching points at the new episode right away
         PlayerLauncher.play(ctx, n.copy(engine = Store.settings.engine))
         onExit()
+    }
+    LaunchedEffect(wantNext, nextState) {
+        if (wantNext && nextState == "ready") playNext()
+        else if (wantNext && nextState == "none") { wantNext = false; Toast.makeText(ctx, "No stream found for the next episode", Toast.LENGTH_SHORT).show() }
     }
     // Auto-play: count down once the next stream is found; at the very end, go right away.
     LaunchedEffect(showNext, nextState, autoplay) {
@@ -402,55 +423,84 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         if (started && buffering && error == null) CircularProgressIndicator(color = UiC.Accent, modifier = Modifier.align(Alignment.Center).size(56.dp))
         if (!started) LoadingSplash(req, kind)
 
+        // "Cinema Bar": title top-left, clock top-right, one slim bar along the bottom. The picture is never dimmed.
         AnimatedVisibility(started && controls && error == null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(Color(0x66000000))) {
-                // Top bar
-                Row(
-                    Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))).padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CtlButton(Icons.AutoMirrored.Filled.ArrowBack, "Back") { save(); onExit() }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(req.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val sub = listOfNotNull(
-                            req.season?.let { epCode(it, req.episode) + (req.episodeTitle?.let { t -> " · $t" } ?: "") },
-                            engine?.let { "${it.label}  ${it.videoInfo()}" },
-                        ).joinToString("   ")
-                        Text(sub, color = UiC.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().height(140.dp).align(Alignment.TopCenter).background(Brush.verticalGradient(listOf(Color(0x99000000), Color.Transparent))))
+                Box(Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xB3000000)))))
+                // Title block
+                Column(Modifier.align(Alignment.TopStart).padding(start = 28.dp, top = 22.dp, end = 200.dp)) {
+                    Text(
+                        req.name, color = Color.White, fontSize = 24.sp, lineHeight = 28.sp, fontFamily = com.cinedeck.app.ui.Display,
+                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    req.season?.let {
+                        Text(
+                            epCode(it, req.episode) + (req.episodeTitle?.let { t -> "   ·   $t" } ?: ""), color = UiC.Muted, fontSize = 13.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val info = engine?.videoInfo().orEmpty()
+                        val tags = buildList {
+                            req.resolution?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                ?: info.substringBefore(" ").substringAfter("×").toIntOrNull()?.let { h -> add(when { h >= 2000 -> "4K"; h >= 1000 -> "1080p"; h >= 700 -> "720p"; else -> "${h}p" }) }
+                            info.substringAfter(" ", "").takeIf { it.isNotBlank() }?.let { add(it) }
+                            engine?.label?.let { add(it) }
+                        }
+                        tags.forEach { Tag(it) }
                     }
                 }
-                // Centre transport
-                Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CtlButton(Icons.Default.Replay10, "Back 10 seconds", big = true) { seekBy(-10_000) }
-                    CtlButton(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", big = true, modifier = Modifier.focusRequester(playFocus)) {
-                        if (ended) { ended = false; engine?.seekTo(0); engine?.play() } else toggle()
-                    }
-                    CtlButton(Icons.Default.Forward10, "Forward 10 seconds", big = true) { seekBy(10_000) }
+                // Clock + wordmark
+                Row(Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 28.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(clock(), color = UiC.Muted, fontSize = 13.sp)
+                    Spacer(Modifier.width(16.dp))
+                    com.cinedeck.app.ui.Logo(14.sp)
                 }
                 // Bottom bar
-                Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(horizontal = 20.dp, vertical = 12.dp),
-                ) {
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp, vertical = 18.dp)) {
+                    if (nextVideo != null && nearEnd && !ended) Text(
+                        (if (autoplay && nextState == "ready") "Up next in $countdown s  ·  " else "Up next  ·  ") + epCode(nextVideo!!.season, nextVideo!!.ep) + " — " + nextVideo!!.label,
+                        color = UiC.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 10.dp).background(Color(0x80000000), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmt(if (draftMs >= 0) draftMs else pos), color = Color.White, fontSize = 13.sp)
+                        Text(fmt(if (draftMs >= 0) draftMs else pos), color = Color.White, fontSize = 14.sp)
                         ScrubBar(
                             pos = pos, dur = dur, draftMs = draftMs,
                             onDraft = { draftMs = it; lastInput = System.currentTimeMillis() },
                             onCommit = { commitScrub() },
                             focus = scrubFocus,
-                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                            modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
                         )
-                        Text(fmt(dur), color = Color.White, fontSize = 13.sp)
+                        Text("−" + fmt((dur - pos).coerceAtLeast(0)), color = UiC.Muted, fontSize = 14.sp)
+                        if (dur > 0) Text("Ends " + clock(dur - pos), color = UiC.Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 10.dp))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CtlChip(Icons.Default.Audiotrack, "Audio") { panel = "audio" }
-                        CtlChip(Icons.Default.Subtitles, "Subtitles") { panel = "text" }
-                        CtlChip(Icons.Default.AspectRatio, PictureModes[resize]) { panel = "picture" }
-                        CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync"; controls = false }
-                        CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "Switch to VLC" else "Switch to ExoPlayer") {
-                            switchEngine(if (kind != "vlc") "vlc" else "exo")
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CtlButton(Icons.Default.Replay10, "Back 10 seconds") { seekBy(-10_000) }
+                            CtlButton(
+                                if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play",
+                                accent = true, modifier = Modifier.focusRequester(playFocus),
+                            ) { if (ended) { ended = false; engine?.seekTo(0); engine?.play() } else toggle() }
+                            CtlButton(Icons.Default.Forward10, "Forward 10 seconds") { seekBy(10_000) }
+                            if (nextVideo != null) CtlButton(Icons.Default.SkipNext, "Next episode") {
+                                if (nextState == "ready") playNext()
+                                else if (nextState == "none") Toast.makeText(ctx, "No stream found for the next episode", Toast.LENGTH_SHORT).show()
+                                else { wantNext = true; Toast.makeText(ctx, "Finding the next episode…", Toast.LENGTH_SHORT).show() }
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val e = engine
+                            val audioName = e?.audioTracks()?.firstOrNull { it.selected }?.label?.let(::shortTrack)
+                            val textName = e?.textTracks()?.firstOrNull { it.selected && it.id != "off" }?.label?.let(::shortTrack) ?: "Off"
+                            CtlChip(Icons.Default.Audiotrack, "Audio: ${audioName ?: "Default"}") { panel = "audio" }
+                            CtlChip(Icons.Default.Subtitles, "Subtitles: $textName") { panel = "text" }
+                            CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync"; controls = false }
+                            CtlChip(Icons.Default.AspectRatio, "Picture: ${PictureModes[resize]}") { panel = "picture" }
+                            CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "VLC ⇄" else "ExoPlayer ⇄") { switchEngine(if (kind != "vlc") "vlc" else "exo") }
                         }
                     }
                 }
@@ -493,7 +543,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
 
         if (showNext) NextCard(
             video = nextVideo!!, state = nextState, countdown = if (autoplay && nextState == "ready") countdown else null,
-            fallbackImage = req.background, modifier = Modifier.align(Alignment.BottomEnd).padding(28.dp),
+            fallbackImage = req.background, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = if (controls) 150.dp else 28.dp),
             onPlay = { playNext() }, onHide = { nextDismissed = true },
         )
 
@@ -671,22 +721,54 @@ private fun LoadingSplash(req: PlayRequest, kind: String) {
     }
 }
 
+/** Round glass transport button; the accent one is the play/pause control. */
 @Composable
-private fun CtlButton(icon: ImageVector, desc: String, big: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), modifier = modifier, focusScale = 1.15f) {
-        Icon(icon, desc, tint = Color.White, modifier = Modifier.background(Color(0x55000000)).padding(if (big) 12.dp else 8.dp).size(if (big) 44.dp else 24.dp))
+private fun CtlButton(icon: ImageVector, desc: String, accent: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val circle = androidx.compose.foundation.shape.CircleShape
+    FocusBox(onClick = onClick, shape = circle, modifier = modifier, focusScale = 1.12f) {
+        Box(
+            Modifier.size(46.dp)
+                .background(if (accent) UiC.Accent else Color(0x1AFFFFFF), circle)
+                .border(1.dp, if (accent) UiC.Accent else Color(0x2EFFFFFF), circle),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, desc, tint = if (accent) Color(0xFF08080B) else Color.White, modifier = Modifier.size(24.dp)) }
     }
 }
 
+/** Pill with an icon and a short "Label: value" text. */
 @Composable
 private fun CtlChip(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.08f, modifier = modifier) {
-        Row(Modifier.background(Color(0x40FFFFFF)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label, color = Color.White, fontSize = 13.sp)
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.06f, modifier = modifier) {
+        Row(
+            Modifier.background(Color(0x1AFFFFFF), RoundedCornerShape(50)).border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(50))
+                .padding(horizontal = 13.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
+}
+
+/** Small outlined tag under the title: "4K", "HEVC", "ExoPlayer". */
+@Composable
+private fun Tag(text: String) {
+    Text(
+        text, color = UiC.Muted, fontSize = 11.sp, lineHeight = 14.sp,
+        modifier = Modifier.border(1.dp, Color(0x66FFFFFF), RoundedCornerShape(4.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
+    )
+}
+
+/** Wall-clock time, optionally some milliseconds from now ("Ends 11:07 PM"). */
+private fun clock(fromNowMs: Long = 0L): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(System.currentTimeMillis() + fromNowMs))
+
+/** "English · AAC · 5.1" → "English 5.1"; keeps the chip short. */
+private fun shortTrack(label: String): String {
+    val parts = label.split(" · ")
+    val ch = parts.drop(1).firstOrNull { it in listOf("5.1", "7.1", "Stereo", "Mono") || it.endsWith("ch") }
+    return listOfNotNull(parts.firstOrNull()?.removeSuffix(" (addon)"), ch).joinToString(" ")
 }
 
 private fun fmtDelay(ms: Long) = (if (ms > 0) "+" else "") + (if (ms % 1000 == 0L) "${ms / 1000}s" else "${ms}ms")

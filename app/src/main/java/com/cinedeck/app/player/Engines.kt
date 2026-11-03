@@ -345,8 +345,9 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     /** After a fatal network error: reopen the stream where it stopped. Returns false if nothing to recover. */
     fun reconnect(): Boolean {
         val p = player ?: return false
-        val pos = p.currentPosition
-        p.seekTo(pos)
+        val pos = p.currentPosition.coerceAtLeast(0)
+        // A fresh media source: the container parser starts clean instead of carrying over whatever confused it.
+        p.setMediaItem(buildItem(if (extApplied) extSubs else emptyList()), pos)
         p.prepare()
         p.playWhenReady = true
         return true
@@ -357,7 +358,17 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
         fun isNetworkError(e: PlaybackException?): Boolean {
             val c = e?.errorCode ?: return false
             // 2xxx = network/IO; 3xxx = parsing (a corrupted read mid-stream looks like a malformed file). Both: reopen and carry on.
-            return c in 2000..3999 || c == PlaybackException.ERROR_CODE_TIMEOUT || c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+            if (c in 2000..3999 || c == PlaybackException.ERROR_CODE_TIMEOUT || c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) return true
+            // The parser tripping over bad bytes (index/state exceptions) is the same thing wearing a different hat.
+            if (c == PlaybackException.ERROR_CODE_UNSPECIFIED) {
+                var cause: Throwable? = e.cause
+                while (cause != null) {
+                    if (cause is ArrayIndexOutOfBoundsException || cause is IndexOutOfBoundsException || cause is java.io.IOException ||
+                        cause is androidx.media3.common.ParserException || cause is java.nio.BufferUnderflowException) return true
+                    cause = cause.cause
+                }
+            }
+            return false
         }
 
         /** Audio-output or decoder problems: worth one retry in safe mode before giving up on ExoPlayer. */

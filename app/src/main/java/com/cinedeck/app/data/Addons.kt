@@ -30,11 +30,16 @@ object Http {
             val req = chain.request()
             val res = chain.proceed(req)
             val type = res.header("Content-Type")?.lowercase().orEmpty()
-            val wantsRange = req.header("Range")?.let { !it.startsWith("bytes=0-") } == true
+            val range = req.header("Range")
+            val wantFrom = range?.removePrefix("bytes=")?.substringBefore("-")?.toLongOrNull()
+            val wantsRange = wantFrom != null && wantFrom > 0
             val badType = res.isSuccessful && (type.startsWith("text/html") || type.startsWith("application/json") || type.startsWith("text/plain"))
             val ignoredRange = wantsRange && res.code == 200
-            if (badType || ignoredRange) {
-                com.cinedeck.app.player.PlayerLog.add("Stream guard: server sent ${res.code} ${type.ifBlank { "?" }} for range ${req.header("Range") ?: "none"} — retried")
+            // A 206 that starts somewhere other than where we asked would be parsed as garbage mid-stream.
+            val gotFrom = res.header("Content-Range")?.removePrefix("bytes ")?.substringBefore("-")?.trim()?.toLongOrNull()
+            val wrongOffset = res.code == 206 && wantFrom != null && gotFrom != null && gotFrom != wantFrom
+            if (badType || ignoredRange || wrongOffset) {
+                com.cinedeck.app.player.PlayerLog.add("Stream guard: server sent ${res.code} ${type.ifBlank { "?" }} ${res.header("Content-Range") ?: ""} for range ${range ?: "none"} — retried")
                 res.close()
                 res.newBuilder().code(503).message("Not the video (guard)").body(okhttp3.ResponseBody.create(null, ByteArray(0))).build()
             } else res

@@ -13,8 +13,8 @@ android {
         applicationId = "com.cinedeck.app"
         minSdk = 21
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.6.5"
+        versionCode = 24
+        versionName = "0.7.0"
     }
 
     signingConfigs {
@@ -86,12 +86,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    implementation("androidx.media3:media3-exoplayer:1.7.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.7.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.7.1")
-    implementation("androidx.media3:media3-datasource-okhttp:1.7.1")
-    implementation("androidx.media3:media3-ui:1.7.1")
-    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.6.1+2")
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
+    implementation("androidx.media3:media3-datasource-okhttp:1.8.0")
+    implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
     implementation("org.videolan.android:libvlc-all:3.6.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
