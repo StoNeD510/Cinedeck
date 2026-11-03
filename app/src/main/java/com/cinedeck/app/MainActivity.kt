@@ -256,12 +256,9 @@ private fun TopTabs(route: String, onGo: (String) -> Unit) {
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            t.label, color = if (sel) C.Text else C.Muted, fontSize = 14.sp, fontFamily = com.cinedeck.app.ui.Display,
+                            t.label, color = if (sel) C.Accent else C.Muted, fontSize = 15.sp, fontFamily = com.cinedeck.app.ui.Display,
                             letterSpacing = 1.sp, fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
                         )
-                        Spacer(Modifier.size(5.dp))
-                        Box(Modifier.fillMaxWidth().height(2.dp).background(if (sel) C.Accent else androidx.compose.ui.graphics.Color.Transparent))
-                        if (sel) Box(Modifier.fillMaxWidth().height(6.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(C.Accent.copy(alpha = 0.45f), androidx.compose.ui.graphics.Color.Transparent))))
                     }
                 }
             }

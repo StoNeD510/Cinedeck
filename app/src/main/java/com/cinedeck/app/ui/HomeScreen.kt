@@ -153,7 +153,6 @@ fun HomeScreen(
 
     Screen("home") {
     Box(Modifier.fillMaxSize()) {
-    if (wide) Auditorium()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 16.dp, vertical = if (wide) 2.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -228,28 +227,6 @@ data class HeroPage(
     val progress: Float, val type: String, val metaId: String, val videoId: String?, val primary: String, val meta: Meta?,
 )
 
-/**
- * The auditorium behind the home screen: a soft spotlight from the top, faint projector beams and a cyan rim light
- * along the bottom. Drawn once, under everything.
- */
-@Composable
-private fun Auditorium() {
-    val accent = C.Accent
-    val cyan = C.Cyan
-    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        val w = size.width; val h = size.height
-        drawRect(Brush.radialGradient(listOf(accent.copy(alpha = 0.13f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w / 2, 0f), radius = w * 0.55f))
-        drawRect(Brush.verticalGradient(0.75f to Color.Transparent, 1f to cyan.copy(alpha = 0.07f)))
-        // Projector beams: three thin wedges fanning down from the top centre.
-        listOf(-0.32f, 0f, 0.32f).forEach { spread ->
-            val p = androidx.compose.ui.graphics.Path().apply {
-                moveTo(w / 2 - 14f, 0f); lineTo(w / 2 + 14f, 0f)
-                lineTo(w / 2 + w * (spread + 0.09f), h); lineTo(w / 2 + w * (spread - 0.09f), h); close()
-            }
-            drawPath(p, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.05f), Color.Transparent)))
-        }
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

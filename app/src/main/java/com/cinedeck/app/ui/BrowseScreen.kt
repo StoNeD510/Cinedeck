@@ -109,7 +109,7 @@ private enum class Picker { TYPE, CATALOG, GENRE }
 fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, String) -> Unit) {
     val data by Store.data.collectAsState()
     val all = remember(data.addons) { Addons.catalogs().filter { !it.def.requires("search") } }
-    var type by rememberSaveable { mutableStateOf(initialType.ifBlank { "movie" }) }
+    var type by rememberSaveable { mutableStateOf(initialType.ifBlank { "series" }) }
     var key by rememberSaveable { mutableStateOf(initialKey) }
     var genre by rememberSaveable { mutableStateOf<String?>(null) }
     var hideWatched by rememberSaveable { mutableStateOf(false) }
@@ -118,7 +118,7 @@ fun BrowseScreen(initialKey: String, initialType: String, onOpen: (String, Strin
     val dense = data.settings.browseDense
     val wideScreen = LocalWide.current
 
-    val types = all.map { it.def.type }.distinct().sortedBy { when (it) { "movie" -> 0; "series" -> 1; else -> 2 } }
+    val types = all.map { it.def.type }.distinct().sortedBy { when (it) { "series" -> 0; "movie" -> 1; else -> 2 } }
     val forType = all.filter { c ->
         c.def.type == type &&
             c.def.extra.orEmpty().none { e -> e.isRequired && e.name != "genre" } &&
