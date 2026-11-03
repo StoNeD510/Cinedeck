@@ -129,7 +129,7 @@ fun HomeScreen(
     val watchedIds = remember(data.progress) { data.progress.values.filter { it.watched && it.type == "movie" }.map { it.metaId }.toSet() }
 
     // Hero pages: what you're in the middle of first (Resume), then the featured titles.
-    val heroPages = remember(hero, continueItems, followed) {
+    val heroPages = remember(hero, continueItems, newEpisodes, followed) {
         val resume = continueItems.take(2).map { c ->
             val m = followed[c.metaId]
             HeroPage(
@@ -141,14 +141,21 @@ fun HomeScreen(
                 description = null, progress = c.fraction, type = c.type, metaId = c.metaId, videoId = c.videoId, primary = "Resume", meta = m,
             )
         }
+        val fresh = newEpisodes.take(3).map { e ->
+            HeroPage(
+                kicker = "NEW EPISODE", title = e.meta.name, image = e.meta.background ?: e.video.thumbnail, logo = e.meta.logo,
+                line = epCode(e.video.season, e.video.ep) + "  ·  " + e.video.label, description = null, progress = 0f,
+                type = "series", metaId = e.meta.id, videoId = e.video.id, primary = "Play", meta = e.meta,
+            )
+        }
         val featured = hero.map { m ->
             HeroPage(
-                kicker = if (m.type == "series") "NOW SHOWING  ·  SERIES" else "NOW SHOWING", title = m.name, image = m.background, logo = m.logo,
+                kicker = if (m.type == "series") "FEATURED SERIES" else "FEATURED", title = m.name, image = m.background, logo = m.logo,
                 line = listOfNotNull(m.imdbRating?.let { "★ $it" }, m.yearText, m.allGenres.take(3).joinToString(" · ").ifBlank { null }).joinToString("   ·   "),
                 description = m.description, progress = 0f, type = m.type, metaId = m.id, videoId = if (m.type == "movie") m.id else null, primary = "Play", meta = m,
             )
         }
-        (resume + featured).distinctBy { it.metaId }.take(8)
+        (resume + fresh + featured).distinctBy { it.metaId }.take(8)
     }
 
     Screen("home") {
@@ -232,7 +239,6 @@ data class HeroPage(
 @Composable
 private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay: (String, String, String) -> Unit, wide: Boolean) {
     val pager = rememberPagerState { items.size }
-    val data by Store.data.collectAsState()
     LaunchedEffect(pager, items.size) {
         while (true) {
             delay(8000)
@@ -240,65 +246,43 @@ private fun Hero(items: List<HeroPage>, onOpen: (String, String) -> Unit, onPlay
         }
     }
     val shape = RoundedCornerShape(if (wide) 14.dp else 0.dp)
-    // "The screen": a lit 16:9 panel in the middle of the auditorium, with a soft accent glow and a bright top edge.
-    // Sized from the screen: tall enough to matter, short enough that the first row of tiles still shows underneath.
+    // A wide banner across the top, about a third of the screen tall. The whole tile opens the title's details.
     val conf = androidx.compose.ui.platform.LocalConfiguration.current
-    val heroH = (conf.screenHeightDp.dp - 190.dp).coerceIn(220.dp, 400.dp)
-    val heroW = minOf(heroH * 16f / 9f, conf.screenWidthDp.dp - 112.dp)
-    val glow = C.Accent
-    Box(Modifier.fillMaxWidth().padding(horizontal = if (wide) 56.dp else 0.dp, vertical = if (wide) 12.dp else 0.dp), contentAlignment = Alignment.Center) {
-        Box(
-            (if (wide) Modifier.width(heroW).height(heroH) else Modifier.fillMaxWidth().aspectRatio(0.72f))
-                .then(if (wide) Modifier.drawBehind {
-                    // Soft accent glow: a few widening rounded outlines fading out.
-                    val r = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
-                    for (i in 1..6) {
-                        val d = i * 3.dp.toPx()
-                        drawRoundRect(glow.copy(alpha = 0.07f - i * 0.009f), topLeft = androidx.compose.ui.geometry.Offset(-d, -d), size = androidx.compose.ui.geometry.Size(size.width + 2 * d, size.height + 2 * d), cornerRadius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
-                    }
-                }.border(1.dp, Color(0x29FFFFFF), shape) else Modifier)
-                .clip(shape),
-        ) {
-            HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
+    val heroH = (conf.screenHeightDp.dp * 0.36f).coerceIn(170.dp, 260.dp)
+    Box(Modifier.fillMaxWidth().padding(horizontal = if (wide) 28.dp else 0.dp, vertical = if (wide) 8.dp else 0.dp)) {
+        Box((if (wide) Modifier.fillMaxWidth().height(heroH) else Modifier.fillMaxWidth().aspectRatio(0.72f)).clip(shape)) {
+            HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                 val m = items[page]
-                Box(Modifier.fillMaxSize().background(C.Surface)) {
-                    AsyncImage(
-                        model = if (wide) m.image else (m.meta?.poster ?: m.image), contentDescription = null,
-                        contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-                        alignment = if (wide) Alignment.TopCenter else Alignment.Center,
-                    )
-                    if (!wide) Box(Modifier.fillMaxSize().background(BottomFade))
-                    // Glass info plate over the lower-left corner of the picture.
-                    Column(
-                        Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
-                            .padding(if (wide) 22.dp else 16.dp)
-                            .then(if (wide) Modifier.widthIn(max = 460.dp) else Modifier.fillMaxWidth())
-                            .then(if (wide) Modifier.background(Color(0x8C0A0A0E), RoundedCornerShape(12.dp)).border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 18.dp) else Modifier),
-                        horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
-                    ) {
-                        Text(m.kicker, color = C.Cyan, fontSize = 11.sp, fontFamily = Display, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        Spacer(Modifier.height(8.dp))
-                        if (m.logo != null) AsyncImage(m.logo, m.title, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 64.dp else 56.dp).widthIn(max = 300.dp))
-                        else Text(m.title, color = Color.White, fontFamily = Display, fontSize = if (wide) 36.sp else 28.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = if (wide) 40.sp else 30.sp, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(6.dp))
-                        Text(m.line, color = C.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(14.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            HeroButton(m.primary, Icons.Default.PlayArrow, primary = true) {
-                                if (m.videoId != null) onPlay(m.type, m.metaId, m.videoId) else onOpen(m.type, m.metaId)
-                            }
-                            m.meta?.let { meta ->
-                                val inList = data.library.any { it.id == meta.id }
-                                HeroButton(if (inList) "In My List" else "My List", if (inList) Icons.Default.Check else Icons.Default.Add) { Store.toggleLibrary(meta) }
-                            }
-                            HeroButton("Details", null) { onOpen(m.type, m.metaId) }
+                FocusBox(onClick = { onOpen(m.type, m.metaId) }, shape = shape, focusScale = 1.0f, modifier = Modifier.fillMaxSize(), memoryKey = "hero:" + m.metaId) {
+                    Box(Modifier.fillMaxSize().background(C.Surface)) {
+                        AsyncImage(
+                            model = if (wide) m.image else (m.meta?.poster ?: m.image), contentDescription = m.title,
+                            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                            alignment = if (wide) Alignment.TopCenter else Alignment.Center,
+                        )
+                        Box(Modifier.fillMaxSize().background(if (wide) LeftFade else BottomFade))
+                        Column(
+                            Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
+                                .padding(horizontal = if (wide) 26.dp else 16.dp, vertical = if (wide) 20.dp else 16.dp)
+                                .then(if (wide) Modifier.widthIn(max = 560.dp) else Modifier.fillMaxWidth()),
+                            horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                m.kicker, color = if (m.kicker.startsWith("NEW")) C.Bg else Color.White, fontSize = 11.sp, fontFamily = Display, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp,
+                                modifier = Modifier.background(if (m.kicker.startsWith("NEW")) C.Cyan else Color(0x66000000), RoundedCornerShape(50))
+                                    .border(1.dp, if (m.kicker.startsWith("NEW")) C.Cyan else Color(0x55FFFFFF), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            if (m.logo != null) AsyncImage(m.logo, m.title, contentScale = ContentScale.Fit, modifier = Modifier.height(if (wide) 56.dp else 56.dp).widthIn(max = 300.dp))
+                            else Text(m.title, color = Color.White, fontFamily = Display, fontSize = if (wide) 30.sp else 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, lineHeight = if (wide) 34.sp else 30.sp, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text(m.line, color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        if (m.progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(m.progress).height(3.dp).background(C.Accent))
                     }
-                    if (m.progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(m.progress).height(3.dp).background(C.Accent))
                 }
             }
-            if (wide) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp).background(Color(0x4DFFFFFF)))
-            Row(Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 repeat(items.size) { i ->
                     Box(Modifier.size(if (i == pager.currentPage) 16.dp else 6.dp, 4.dp).clip(RoundedCornerShape(2.dp))
                         .background(if (i == pager.currentPage) C.Accent else Color(0x66FFFFFF)))

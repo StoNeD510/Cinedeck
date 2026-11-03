@@ -332,7 +332,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             when {
                 controls && focusScrub -> { scrubFocus.requestFocus(); focusScrub = false }
                 controls -> playFocus.requestFocus()
-                panel == "sync" -> {}
+                panel != null -> {}
                 else -> rootFocus.requestFocus()
             }
         }
@@ -391,7 +391,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     LaunchedEffect(ended) { if (ended && autoplay && nextState == "ready") { countdown = 0; playNext() } }
 
     BackHandler {
-        if (panel != null) panel = null else { save(); onExit() }
+        if (panel != null) { panel = null; controls = true } else { save(); onExit() }
     }
 
     Box(
@@ -424,7 +424,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             .focusable()
             .clickable(remember { MutableInteractionSource() }, indication = null) {
                 lastInput = System.currentTimeMillis()
-                if (panel == "sync") { panel = null; controls = true } else { controls = !controls; if (!controls) panel = null }
+                if (panel != null) { panel = null; controls = true } else { controls = !controls }
             },
     ) {
         if (started && buffering && error == null) CircularProgressIndicator(color = UiC.Accent, modifier = Modifier.align(Alignment.Center).size(56.dp))
@@ -503,10 +503,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                             val e = engine
                             val audioName = e?.audioTracks()?.firstOrNull { it.selected }?.label?.let(::shortTrack)
                             val textName = e?.textTracks()?.firstOrNull { it.selected && it.id != "off" }?.label?.let(::shortTrack) ?: "Off"
-                            CtlChip(Icons.Default.Audiotrack, "Audio: ${audioName ?: "Default"}") { panel = "audio" }
-                            CtlChip(Icons.Default.Subtitles, "Subtitles: $textName") { panel = "text" }
+                            CtlChip(Icons.Default.Audiotrack, "Audio: ${audioName ?: "Default"}") { panel = "audio"; controls = false }
+                            CtlChip(Icons.Default.Subtitles, "Subtitles: $textName") { panel = "text"; controls = false }
                             CtlChip(Icons.Default.Tune, if (audioDelay == 0L && subDelay == 0L) "Sync" else "Sync ${fmtDelay(audioDelay)}/${fmtDelay(subDelay)}") { panel = "sync"; controls = false }
-                            CtlChip(Icons.Default.AspectRatio, "Picture: ${PictureModes[resize]}") { panel = "picture" }
+                            CtlChip(Icons.Default.AspectRatio, "Picture: ${PictureModes[resize]}") { panel = "picture"; controls = false }
                             CtlChip(Icons.Default.SwapHoriz, if (kind != "vlc") "VLC ⇄" else "ExoPlayer ⇄") { switchEngine(if (kind != "vlc") "vlc" else "exo") }
                         }
                     }
@@ -532,19 +532,20 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 "text" -> listOf(TrackOpt("off", "Off", e?.textTracks().orEmpty().none { it.selected })) + e?.textTracks().orEmpty()
                 else -> PictureModes.mapIndexed { i, n -> TrackOpt(i.toString(), n, i == resize) }
             }
-            OptionsDialog(
-                title = when (p) { "audio" -> "Audio"; "text" -> "Subtitles"; else -> "Picture size" },
+            OptionStrip(
+                title = when (p) { "audio" -> "Audio"; "text" -> "Subtitles"; else -> "Picture" },
                 options = opts,
-                empty = if (p == "picture") "" else "No tracks found yet. They appear once the video starts.",
+                empty = if (p == "picture") "" else "No tracks found yet — they appear once the video starts.",
                 onPick = { o ->
                     when (p) {
                         "audio" -> e?.selectAudio(o.id)
                         "text" -> e?.selectText(if (o.id == "off") null else o.id)
                         else -> { resize = o.id.toInt(); e?.setResize(resize) }
                     }
-                    panel = null
+                    panel = null; controls = true
                 },
-                onDismiss = { panel = null },
+                onDismiss = { panel = null; controls = true },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp),
             )
         }
 
@@ -835,50 +836,40 @@ private fun DelayRow(title: String, value: Long, step: Long, modifier: Modifier,
     }
 }
 
+/** Audio / subtitle / picture choices as a slim strip over the bottom of the picture, like the sync strip: nothing dimmed. */
 @Composable
-private fun OptionsDialog(title: String, options: List<TrackOpt>, empty: String, onPick: (TrackOpt) -> Unit, onDismiss: () -> Unit) {
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+private fun OptionStrip(title: String, options: List<TrackOpt>, empty: String, onPick: (TrackOpt) -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(options.size) { repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect } }
+    val focusIndex = options.indexOfFirst { it.selected }.coerceAtLeast(0)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = focusIndex)
+    Column(
+        modifier
+            .onPreviewKeyEvent { ev -> if (ev.type == KeyEventType.KeyDown && ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK) { onDismiss(); true } else false }
+            .fillMaxWidth().padding(horizontal = 28.dp)
+            .background(Color(0x99000000), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val first = remember { FocusRequester() }
-        LaunchedEffect(Unit) {
-            repeat(10) { kotlinx.coroutines.delay(80); if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title.uppercase(), color = UiC.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, fontFamily = com.cinedeck.app.ui.Display, modifier = Modifier.weight(1f))
+            Text("OK picks  ·  Back closes", color = UiC.Muted, fontSize = 11.sp)
         }
-        Box(
-            Modifier.fillMaxSize()
-                .onPreviewKeyEvent { ev ->
-                    if (ev.type == KeyEventType.KeyDown && (ev.key.nativeKeyCode == AKeyEvent.KEYCODE_BACK || ev.key.nativeKeyCode == AKeyEvent.KEYCODE_ESCAPE)) { onDismiss(); true } else false
-                }
-                .clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() },
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Column(
-                Modifier.fillMaxHeight().width(400.dp).background(UiC.Surface)
-                    .clickable(remember { MutableInteractionSource() }, indication = null) {}
-                    .padding(20.dp),
-            ) {
-                Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = com.cinedeck.app.ui.Display)
-                Spacer(Modifier.height(12.dp))
-                if (options.isEmpty()) Text(empty, color = UiC.Muted, fontSize = 13.sp)
-                val focusIndex = options.indexOfFirst { it.selected }.coerceAtLeast(0)
-                LazyColumn {
-                    items(options.size) { i ->
-                        val o = options[i]
-                        TrackRow(o.label, o.selected, if (i == focusIndex) Modifier.focusRequester(first) else Modifier) { onPick(o) }
+        if (options.isEmpty()) Text(empty, color = UiC.Muted, fontSize = 13.sp)
+        androidx.compose.foundation.lazy.LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(options.size) { i ->
+                val o = options[i]
+                FocusBox(onClick = { onPick(o) }, shape = RoundedCornerShape(50), focusScale = 1.06f, modifier = if (i == focusIndex) Modifier.focusRequester(first) else Modifier) {
+                    Row(
+                        Modifier.background(if (o.selected) UiC.Accent.copy(alpha = 0.35f) else Color(0x1AFFFFFF), RoundedCornerShape(50))
+                            .border(1.dp, if (o.selected) UiC.Accent else Color(0x24FFFFFF), RoundedCornerShape(50)).padding(horizontal = 13.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (o.selected) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
+                        Text(o.label, color = Color.White, fontSize = 13.sp, maxLines = 1)
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TrackRow(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, modifier = modifier.fillMaxWidth().padding(vertical = 3.dp), focusScale = 1.02f) { f ->
-        Row(Modifier.fillMaxWidth().background(if (f) UiC.Accent.copy(alpha = 0.25f) else if (selected) UiC.Surface2 else Color.Transparent).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            if (selected) Icon(Icons.Default.Check, null, tint = UiC.Accent)
         }
     }
 }
