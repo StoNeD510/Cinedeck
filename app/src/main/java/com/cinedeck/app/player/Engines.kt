@@ -269,6 +269,8 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
     override fun pause() { player?.pause() }
     override val isPlaying get() = player?.isPlaying == true
     override val isBuffering get() = player?.playbackState == Player.STATE_BUFFERING
+    /** False when the container gave ExoPlayer no seek index: every seek on such a stream silently lands at 0. */
+    val isSeekable get() = player?.isCurrentMediaItemSeekable ?: true
     /** How far ahead of the playhead the buffer reaches, in ms. */
     val bufferedAheadMs get() = player?.let { it.bufferedPosition - it.currentPosition } ?: 0L
     override val position get() = player?.currentPosition ?: 0

@@ -168,7 +168,9 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var engine by remember { mutableStateOf<Engine?>(null) }
     var startAt by remember {
         val p = Store.data.value.progress[req.videoId]
-        mutableLongStateOf(if (p != null && !p.watched && p.position > 10_000) p.position - 3_000 else 0L)
+        val at = if (p != null && !p.watched && p.position > 10_000) p.position - 3_000 else 0L
+        PlayerLog.add("Open ${req.name} ${req.season?.let { epCode(it, req.episode) } ?: ""}: saved ${p?.let { "${fmt(it.position)}/${fmt(it.duration)}${if (it.watched) " watched" else ""}" } ?: "nothing"} → start at ${fmt(at)}")
+        mutableLongStateOf(at)
     }
     var error by remember { mutableStateOf<String?>(null) }
     var pos by remember { mutableLongStateOf(0L) }
@@ -219,7 +221,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var subDelay by remember { mutableLongStateOf(0L) }
     fun switchEngine(to: String, reason: String? = null) {
         val e = engine
-        if (e != null && e.position > 0) startAt = e.position
+        if (e != null && e.position > 10_000) startAt = e.position // a player that never got going keeps the requested resume point
         save()
         error = null
         buffering = true
@@ -319,7 +321,20 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 dur = e.duration
                 playing = e.isPlaying
                 buffering = e.isBuffering
-                if (!started && e.isPlaying && e.position > 300) { started = true; Store.startWatching(req) }
+                if (!started && e.isPlaying && e.position > 300) {
+                    started = true; Store.startWatching(req)
+                    // Resume check: the stream should be playing from where we asked. If it isn't, the container had no
+                    // seek index (ExoPlayer turns such seeks into "start at 0") — hand it to VLC, which seeks without one.
+                    if (startAt > 20_000 && e.position < startAt - 20_000) {
+                        if (e is ExoEngine && !e.isSeekable && req.engine == "auto" && kind != "vlc") {
+                            PlayerLog.add("${e.label}: stream has no seek index, resume at ${fmt(startAt)} ignored — switching to VLC to resume")
+                            switchEngine("vlc", "Resuming with VLC…")
+                        } else {
+                            PlayerLog.add("${e.label}: started at ${fmt(e.position)} instead of ${fmt(startAt)} — seeking")
+                            e.seekTo(startAt)
+                        }
+                    }
+                }
             }
             if (++tick % 20 == 0) save()
             if (tick % 240 == 0 && playing && !buffering) reconnects = 0 // two minutes of smooth playback forgives earlier blips
