@@ -201,6 +201,7 @@ data class Settings(
     val theme: String = "neon",
     val themeIcon: Boolean = true, // switch the launcher icon with the theme
     val autoplayNext: Boolean = true, // TV shows: start the next episode automatically // Browse grid: 8 across on TV (true) or 6 (false)
+    val keepAudioAwake: Boolean = true, // stream silence while paused so an ARC soundbar never powers down
     val streamSort: String = "quality", // quality | seeders | size
 )
 

@@ -238,6 +238,16 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Keep soundbar awake while paused", color = C.Text, fontSize = 14.sp)
+                        Text("Plays silence while a video is paused so an HDMI ARC speaker doesn't go to sleep and lose the audio.", color = C.Muted, fontSize = 12.sp)
+                    }
+                    Switch(
+                        data.settings.keepAudioAwake, { v -> Store.updateSettings { it.copy(keepAudioAwake = v) } },
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = Color.White),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Load subtitles from addons", color = C.Text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Switch(
                         data.settings.autoSubtitles, { v -> Store.updateSettings { it.copy(autoSubtitles = v) } },
