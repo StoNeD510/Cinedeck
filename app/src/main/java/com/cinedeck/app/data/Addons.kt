@@ -22,7 +22,7 @@ object Http {
 
     /**
      * For video: no disk cache, and a guard that refuses anything that isn't the file we asked for
-     * (an HTML error/rate-limit page returned with status 200, or a range request answered from byte 0),
+     * (a small HTML/JSON error page returned with status 200, or a range reply starting at the wrong byte),
      * turning it into a retryable error instead of letting the player parse junk as video.
      */
     val streamClient: OkHttpClient by lazy {
@@ -32,13 +32,14 @@ object Http {
             val type = res.header("Content-Type")?.lowercase().orEmpty()
             val range = req.header("Range")
             val wantFrom = range?.removePrefix("bytes=")?.substringBefore("-")?.toLongOrNull()
-            val wantsRange = wantFrom != null && wantFrom > 0
-            val badType = res.isSuccessful && (type.startsWith("text/html") || type.startsWith("application/json") || type.startsWith("text/plain"))
-            val ignoredRange = wantsRange && res.code == 200
+            // Only a small text body is an error page; a multi-gigabyte body is the video whatever the server labels it.
+            val len = res.header("Content-Length")?.toLongOrNull() ?: -1L
+            val textual = type.startsWith("text/html") || type.startsWith("application/json") || type.startsWith("text/plain")
+            val badType = res.isSuccessful && textual && len in 0..(2L * 1024 * 1024)
             // A 206 that starts somewhere other than where we asked would be parsed as garbage mid-stream.
             val gotFrom = res.header("Content-Range")?.removePrefix("bytes ")?.substringBefore("-")?.trim()?.toLongOrNull()
             val wrongOffset = res.code == 206 && wantFrom != null && gotFrom != null && gotFrom != wantFrom
-            if (badType || ignoredRange || wrongOffset) {
+            if (badType || wrongOffset) {
                 com.cinedeck.app.player.PlayerLog.add("Stream guard: server sent ${res.code} ${type.ifBlank { "?" }} ${res.header("Content-Range") ?: ""} for range ${range ?: "none"} — retried")
                 res.close()
                 res.newBuilder().code(503).message("Not the video (guard)").body(okhttp3.ResponseBody.create(null, ByteArray(0))).build()

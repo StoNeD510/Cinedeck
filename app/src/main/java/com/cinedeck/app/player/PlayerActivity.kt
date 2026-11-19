@@ -173,6 +173,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         mutableLongStateOf(at)
     }
     var error by remember { mutableStateOf<String?>(null) }
+    val openedAt = remember { System.currentTimeMillis() }
     var pos by remember { mutableLongStateOf(0L) }
     var dur by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
@@ -193,18 +194,24 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     // Subtitles from addons load in the background while the stream connects; playback never waits for them.
     LaunchedEffect(req.videoId) {
         if (!settings.autoSubtitles || req.type == "other") return@LaunchedEffect
-        // Fingerprint the file first so the addon can return subtitles timed for this exact release.
-        val fp = withTimeoutOrNull(4_000) { Addons.videoHash(req.url, req.headers) }
-        val extra = buildMap {
-            fp?.let { (hash, size) -> put("videoHash", hash); put("videoSize", size.toString()) }
-            req.filename?.let { put("filename", it) }
-        }
-        val found = withTimeoutOrNull(8_000) { runCatching { Addons.subtitles(req.type, req.videoId, extra) }.getOrDefault(emptyList()) }.orEmpty()
-            .filter { s -> langs.isEmpty() || langs.any { l -> s.lang.equals(l, true) || s.lang.startsWith(l.take(2), true) } }
-            .distinctBy { it.url }.take(12)
-        subs = found
+        suspend fun fetch(extra: Map<String, String>) =
+            withTimeoutOrNull(8_000) { runCatching { Addons.subtitles(req.type, req.videoId, extra) }.getOrDefault(emptyList()) }.orEmpty()
+                .filter { s -> langs.isEmpty() || langs.any { l -> s.lang.equals(l, true) || s.lang.startsWith(l.take(2), true) } }
+                .distinctBy { it.url }.take(12)
+        // First pass by file name only: no extra connections to the video host while the stream is opening.
+        val byName = fetch(buildMap { req.filename?.let { put("filename", it) } })
+        subs = byName
         // If the picture is already up, don't interrupt it: the subtitles are offered in the Subtitles menu instead.
-        engine?.addSubtitles(found, applyNow = !started)
+        engine?.addSubtitles(byName, applyNow = !started)
+        // Once the picture is playing, fingerprint the file (two small range reads) for subtitles timed to this exact release.
+        while (!started) kotlinx.coroutines.delay(1_000)
+        kotlinx.coroutines.delay(5_000)
+        val fp = withTimeoutOrNull(6_000) { Addons.videoHash(req.url, req.headers) } ?: return@LaunchedEffect
+        val exact = fetch(buildMap {
+            put("videoHash", fp.first); put("videoSize", fp.second.toString())
+            req.filename?.let { put("filename", it) }
+        })
+        if (exact.isNotEmpty()) { subs = (exact + byName).distinctBy { it.url }.take(12); engine?.addSubtitles(subs, applyNow = false) }
     }
 
     var finished by remember { mutableStateOf(false) } // marked watched (Up next pressed): later saves must not undo it
@@ -310,10 +317,16 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         onDispose { lifecycle.removeObserver(obs) }
     }
 
-    // If nothing has played after 45 s, stop spinning and offer a way out.
+    // Slow to open: after 20 s in Auto, hand the stream to the other player instead of waiting. After 45 s, stop spinning.
     LaunchedEffect(kind, started) {
         if (started || kind == "none") return@LaunchedEffect
-        kotlinx.coroutines.delay(45_000)
+        kotlinx.coroutines.delay(20_000)
+        if (!started && error == null && kind != "vlc" && req.engine == "auto") {
+            PlayerLog.add("${engine?.label ?: kind}: no picture after 20 s — trying VLC  [${req.filename ?: req.name}]")
+            switchEngine("vlc", "Slow to open — trying VLC…")
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(25_000)
         if (!started && error == null) {
             PlayerLog.add("${engine?.label ?: kind}: stuck loading for 45 s  [${req.name} ${req.filename ?: ""}]")
             error = "The stream never started. The link may be rate-limited or expired; try another stream, or the other player."
@@ -332,6 +345,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 buffering = e.isBuffering
                 if (!started && e.isPlaying && e.position > 300) {
                     started = true; Store.startWatching(req)
+                    PlayerLog.add("${e.label}: first picture ${(System.currentTimeMillis() - openedAt) / 100 / 10.0}s after open (${e.videoInfo()})")
                     // Resume check: the stream should be playing from where we asked. If it isn't, the container had no
                     // seek index (ExoPlayer turns such seeks into "start at 0") — hand it to VLC, which seeks without one.
                     if (startAt > 20_000 && e.position < startAt - 20_000) {
