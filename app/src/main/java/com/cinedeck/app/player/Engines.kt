@@ -124,7 +124,7 @@ class ExoEngine(private val ctx: Context, private val safeAudio: Boolean = false
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 // Safe mode: fold surround tracks down to stereo so devices that refuse 6/8-channel output still play.
                 if (safeAudio) b.setAudioProcessors(arrayOf(stereoDownmix()))
-                return b.build()
+                return GapSyncAudioSink(b.build())
             }
         }
             .setExtensionRendererMode(if (safeAudio) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
