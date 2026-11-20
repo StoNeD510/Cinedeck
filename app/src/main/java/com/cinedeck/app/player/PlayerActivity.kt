@@ -299,19 +299,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
         )
     }
 
-    // Paused with the picture up: keep the HDMI audio stream alive so an ARC soundbar doesn't power down.
-    var inBackground by remember { mutableStateOf(false) }
-    val keepAwake = started && !playing && !ended && error == null && !inBackground && settings.keepAudioAwake
-    LaunchedEffect(keepAwake) {
-        if (keepAwake) { kotlinx.coroutines.delay(1_500); AudioKeepAlive.start() } else AudioKeepAlive.stop()
-    }
-    DisposableEffect(Unit) { onDispose { AudioKeepAlive.stop() } }
-
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, ev ->
-            if (ev == androidx.lifecycle.Lifecycle.Event.ON_STOP) { inBackground = true; engine?.pause(); save() }
-            if (ev == androidx.lifecycle.Lifecycle.Event.ON_START) inBackground = false
+            if (ev == androidx.lifecycle.Lifecycle.Event.ON_STOP) { engine?.pause(); save() }
         }
         lifecycle.addObserver(obs)
         onDispose { lifecycle.removeObserver(obs) }
