@@ -112,6 +112,11 @@ class PlayerActivity : ComponentActivity() {
         if (isFinishing) { teardown?.invoke(); teardown = null }
     }
 
+    override fun onStop() {
+        super.onStop()
+        com.cinedeck.app.data.Sync.onBackground() // TV switched off or app left mid-episode: push the position now
+    }
+
     override fun onDestroy() {
         teardown?.invoke(); teardown = null
         super.onDestroy()

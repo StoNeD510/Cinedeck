@@ -40,9 +40,36 @@ object Store {
         }
     }
 
+    /** Called after every local change to synced data (not after a merge from the cloud). */
+    @Volatile var onLocalChange: (() -> Unit)? = null
+
     fun edit(block: (AppData) -> AppData) {
-        _data.update(block)
+        var changed = false
+        _data.update { before ->
+            val after = block(before)
+            // Note removals as tombstones and addon additions as timestamps, so syncing can tell "removed here" from "new there".
+            val now = System.currentTimeMillis()
+            val gone = buildList {
+                before.progress.keys.forEach { if (it !in after.progress) add("p:$it") }
+                val lib = after.library.mapTo(HashSet()) { it.id }
+                before.library.forEach { if (it.id !in lib) add("l:${it.id}") }
+                val urls = after.addons.mapTo(HashSet()) { it.url }
+                before.addons.forEach { if (it.url !in urls) add("a:${it.url}") }
+            }
+            val oldUrls = before.addons.mapTo(HashSet()) { it.url }
+            val added = after.addons.map { it.url }.filter { it !in oldUrls }
+            changed = gone.isNotEmpty() || added.isNotEmpty() || before.progress != after.progress || before.library != after.library
+            if (gone.isEmpty() && added.isEmpty()) after
+            else after.copy(deleted = after.deleted + gone.associateWith { now }, addonTimes = after.addonTimes + added.associateWith { now })
+        }
         com.cinedeck.app.ui.ThemeState.palette = com.cinedeck.app.ui.paletteFor(_data.value.settings.theme)
+        saveSignal.trySend(Unit)
+        if (changed) onLocalChange?.invoke()
+    }
+
+    /** Applies the result of a sync merge. Unlike [edit], nothing here counts as a local change. */
+    fun applySync(block: (AppData) -> AppData) {
+        _data.update(block)
         saveSignal.trySend(Unit)
     }
 

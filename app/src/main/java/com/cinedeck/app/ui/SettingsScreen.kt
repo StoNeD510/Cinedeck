@@ -33,6 +33,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -263,6 +265,9 @@ fun SettingsScreen(onRdFiles: () -> Unit) {
         }
 
         // ---------- Data ----------
+        item { SettingsHeader("SYNC BETWEEN TVS") }
+        item { SyncSection() }
+
         item { SettingsHeader("DATA") }
         item {
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -308,5 +313,62 @@ private fun ThemeSwatch(p: Palette, selected: Boolean, onClick: () -> Unit) {
 fun IconBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit) {
     FocusBox(onClick = onClick, shape = RoundedCornerShape(50)) {
         Icon(icon, desc, tint = C.Muted, modifier = Modifier.padding(6.dp).size(22.dp))
+    }
+}
+
+
+/** Sync setup: a GitHub token (typed, or pasted from a phone) and the state of the last sync. */
+@Composable
+private fun SyncSection() {
+    val data by Store.data.collectAsState()
+    val status by com.cinedeck.app.data.Sync.status.collectAsState()
+    var token by remember { mutableStateOf(data.settings.syncToken) }
+    var portalUrl by remember { mutableStateOf<String?>(null) }
+    var portal by remember { mutableStateOf<com.cinedeck.app.data.TokenPortal?>(null) }
+    val linked = data.settings.syncToken.isNotBlank()
+    // A token arriving from the phone page shows up in the saved settings: reflect it and close the page.
+    LaunchedEffect(data.settings.syncToken) {
+        if (data.settings.syncToken != token) token = data.settings.syncToken
+        if (data.settings.syncToken.isNotBlank()) { portal?.stop(); portal = null; portalUrl = null }
+    }
+    DisposableEffect(Unit) { onDispose { portal?.stop() } }
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            "Keeps watched episodes, resume positions, My List and addons the same on every TV, in a private GitHub repository named “${com.cinedeck.app.data.Sync.REPO_NAME}” that only you can see. ReelDJ refuses to sync if that repository isn't private. Settings and your Real-Debrid key stay on each TV.",
+            color = C.Muted, fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            when {
+                !linked -> "Not set up on this TV"
+                status.state == "error" -> "Problem: ${status.message}"
+                status.state == "syncing" -> "Syncing…"
+                status.lastOk > 0 -> "Synced at " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(status.lastOk)) + (data.settings.syncRepo.takeIf { it.isNotBlank() }?.let { "  ·  $it (private)" } ?: "")
+                else -> status.message
+            },
+            color = if (status.state == "error" && linked) C.Gold else C.Text, fontSize = 14.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        RemoteTextField(token, { token = it }, "GitHub token", password = true)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HeroButton(if (linked) "Save & sync now" else "Save & sync", null, primary = true) { com.cinedeck.app.data.Sync.setToken(token) }
+            HeroButton(if (portalUrl == null) "Paste from phone" else "Close phone page", null) {
+                if (portalUrl == null) {
+                    val p = com.cinedeck.app.data.TokenPortal { t -> com.cinedeck.app.data.Sync.setToken(t) }
+                    portalUrl = p.start() ?: "unavailable"; portal = p
+                } else { portal?.stop(); portal = null; portalUrl = null }
+            }
+            if (linked) HeroButton("Turn off", null) { token = ""; com.cinedeck.app.data.Sync.setToken("") }
+        }
+        portalUrl?.let { url ->
+            Spacer(Modifier.height(10.dp))
+            if (url == "unavailable") Text("This TV has no home-network address right now.", color = C.Gold, fontSize = 13.sp)
+            else Column(Modifier.background(C.Surface, RoundedCornerShape(10.dp)).padding(14.dp)) {
+                Text("On a phone or computer on the same Wi-Fi, open:", color = C.Muted, fontSize = 12.sp)
+                Text(url, color = C.Cyan, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = Display)
+                Text("Code: ${portal?.pin}", color = C.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = Display)
+            }
+        }
     }
 }

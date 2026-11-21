@@ -202,6 +202,8 @@ data class Settings(
     val themeIcon: Boolean = true, // switch the launcher icon with the theme
     val autoplayNext: Boolean = true, // TV shows: start the next episode automatically // Browse grid: 8 across on TV (true) or 6 (false)
     val streamSort: String = "quality", // quality | seeders | size
+    val syncToken: String = "", // GitHub token for syncing between devices; stays on this device, never uploaded
+    val syncRepo: String = "", // "owner/name" of the private repo holding the sync file (filled in automatically)
 )
 
 @Serializable
@@ -210,6 +212,21 @@ data class AppData(
     val library: List<LibraryItem> = emptyList(),
     val progress: Map<String, Progress> = emptyMap(),
     val settings: Settings = Settings(),
+    /** When things were removed ("p:<videoId>", "l:<libraryId>", "a:<addonUrl>" → time), so a sync doesn't bring them back. */
+    val deleted: Map<String, Long> = emptyMap(),
+    /** When each addon was added on some device (url → time); addons that predate syncing have no entry. */
+    val addonTimes: Map<String, Long> = emptyMap(),
+)
+
+/** The file kept in the private sync repo: watch history, My List and addons. Settings and tokens stay on each device. */
+@Serializable
+data class SyncDoc(
+    val v: Int = 1,
+    val progress: Map<String, Progress> = emptyMap(),
+    val library: List<LibraryItem> = emptyList(),
+    val addons: List<String> = emptyList(),
+    val addonTimes: Map<String, Long> = emptyMap(),
+    val deleted: Map<String, Long> = emptyMap(),
 )
 
 val DefaultAddons = listOf(

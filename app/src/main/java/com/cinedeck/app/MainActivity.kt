@@ -100,6 +100,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (android.os.Build.VERSION.SDK_INT >= 26) window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
         if (android.os.Build.VERSION.SDK_INT >= 34) runCatching { window.setDesiredHdrHeadroom(1f) }
+        com.cinedeck.app.data.Sync.onForeground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        com.cinedeck.app.data.Sync.onBackground()
     }
 
     override fun onNewIntent(intent: Intent) {
