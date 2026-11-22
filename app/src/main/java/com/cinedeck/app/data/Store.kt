@@ -87,7 +87,7 @@ object Store {
 
     // ----- progress / watched -----
     fun saveProgress(req: PlayRequest, position: Long, duration: Long) = edit { d ->
-        val watched = duration > 0 && position >= duration * 0.90
+        val watched = duration > 0 && position >= duration * 0.95
         val old = d.progress[req.videoId]
         val p = Progress(
             videoId = req.videoId, metaId = req.metaId, type = req.type, name = req.name,
