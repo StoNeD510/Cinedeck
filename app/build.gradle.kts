@@ -13,8 +13,8 @@ android {
         applicationId = "com.cinedeck.app"
         minSdk = 21
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.9.0"
+        versionCode = 39
+        versionName = "0.9.1"
     }
 
     signingConfigs {
