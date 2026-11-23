@@ -63,6 +63,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -85,10 +90,38 @@ object HomeData {
         rows.value = result
     }
 
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    private var watcher: kotlinx.coroutines.Job? = null
+
+    /**
+     * Keeps [followed] (episode lists of every show you watch or have in My List) loaded for the life of the app,
+     * whichever screen is open. Poster checkmarks and progress bars need these lists, and with syncing a show can
+     * become "followed" without ever being opened on this device.
+     */
+    fun start() {
+        if (watcher != null) return
+        watcher = scope.launch {
+            Store.data.map { Tracker.followedSeries(it) }.distinctUntilChanged().collectLatest { ids ->
+                val wanted = ids.mapTo(HashSet()) { it.second }
+                followed.update { cur -> cur.filterKeys { it in wanted } }
+                repeat(4) { attempt ->
+                    val missing = ids.filter { it.second !in followed.value }
+                    if (missing.isEmpty()) return@collectLatest
+                    if (attempt > 0) delay(20_000L * attempt) // addons not ready yet, or a fetch failed: try again shortly
+                    missing.chunked(6).forEach { chunk ->
+                        val metas = Addons.metas(chunk)
+                        if (metas.isNotEmpty()) followed.update { it + metas.associateBy { m -> m.id } }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Waits until every followed show's episode list has been fetched (Upcoming shows a spinner meanwhile). */
     suspend fun loadFollowed() {
-        val d = Store.data.value
-        val metas = Addons.metas(Tracker.followedSeries(d))
-        followed.value = metas.associateBy { it.id }
+        start()
+        val metas = Addons.metas(Tracker.followedSeries(Store.data.value))
+        if (metas.isNotEmpty()) followed.update { it + metas.associateBy { m -> m.id } }
     }
 }
 
@@ -109,8 +142,6 @@ fun HomeScreen(
 
     val manifestsReady = data.addons.count { it.manifest != null }
     LaunchedEffect(manifestsReady) { HomeData.load() }
-    val followedKey = remember(data.library, data.progress) { (data.library.map { it.id } + data.progress.values.filter { it.type == "series" }.map { it.metaId }).toSet() }
-    LaunchedEffect(followedKey) { HomeData.loadFollowed() }
 
     val shown = rows?.filter { filter == "all" || it.type == filter }.orEmpty()
     val hero = remember(shown) { shown.flatMap { it.items.take(4) }.filter { it.background != null }.distinctBy { it.id }.take(8) }

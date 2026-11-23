@@ -23,6 +23,7 @@ class CineDeckApp : Application(), ImageLoaderFactory {
         com.cinedeck.app.player.PlayerLog.init(this)
         Store.init(this)
         com.cinedeck.app.data.Sync.init()
+        com.cinedeck.app.ui.HomeData.start()
         scope.launch { Addons.refreshManifests(force = true) }
     }
 
