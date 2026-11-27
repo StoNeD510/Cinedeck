@@ -195,6 +195,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
     var ended by remember { mutableStateOf(false) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
+    var rootHasFocus by remember { mutableStateOf(false) }
 
     // Subtitles from addons load in the background while the stream connects; playback never waits for them.
     LaunchedEffect(req.videoId) {
@@ -380,15 +381,15 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             if (controls && panel == null && playing && draftMs < 0 && System.currentTimeMillis() - lastInput > 4500) controls = false
         }
     }
+    // Showing the controls always puts the selection on a visible control (the timeline when scrubbing, else Play).
+    // The control may not exist for a frame or two after the bar appears, so keep trying until the request lands.
     LaunchedEffect(controls) {
-        if (controls) kotlinx.coroutines.delay(50)
-        runCatching {
-            when {
-                controls && focusScrub -> { scrubFocus.requestFocus(); focusScrub = false }
-                controls -> playFocus.requestFocus()
-                panel != null -> {}
-                else -> rootFocus.requestFocus()
-            }
+        if (!controls) { if (panel == null) runCatching { rootFocus.requestFocus() }; return@LaunchedEffect }
+        val target = if (focusScrub) scrubFocus else playFocus
+        focusScrub = false
+        repeat(20) {
+            kotlinx.coroutines.delay(40)
+            if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
         }
     }
     fun commitScrub() {
@@ -452,6 +453,10 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
             .onPreviewKeyEvent { ev ->
                 lastInput = System.currentTimeMillis()
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (controls && panel == null && rootHasFocus && ev.key.nativeKeyCode in listOf(
+                        AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN,
+                        AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT,
+                    )) { runCatching { playFocus.requestFocus() }; return@onPreviewKeyEvent true }
                 if (showNext && !controls && ev.key.nativeKeyCode in listOf(
                         AKeyEvent.KEYCODE_DPAD_CENTER, AKeyEvent.KEYCODE_ENTER, AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN,
                         AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT,
@@ -474,6 +479,7 @@ private fun PlayerScreen(req: PlayRequest, onExit: () -> Unit) {
                 }
             }
             .focusRequester(rootFocus)
+            .onFocusChanged { rootHasFocus = it.isFocused } // true only when the selection is on the bare screen, not on a control
             .focusable()
             .clickable(remember { MutableInteractionSource() }, indication = null) {
                 lastInput = System.currentTimeMillis()
@@ -786,28 +792,31 @@ private fun LoadingSplash(req: PlayRequest, kind: String) {
 @Composable
 private fun CtlButton(icon: ImageVector, desc: String, accent: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val circle = androidx.compose.foundation.shape.CircleShape
-    FocusBox(onClick = onClick, shape = circle, modifier = modifier, focusScale = 1.12f) {
+    FocusBox(onClick = onClick, shape = circle, modifier = modifier, focusScale = 1.18f) { focused ->
+        // The selected control turns solid white: readable over any picture, and distinct from the pink play button.
         Box(
             Modifier.size(46.dp)
-                .background(if (accent) UiC.Accent else Color(0x1AFFFFFF), circle)
-                .border(1.dp, if (accent) UiC.Accent else Color(0x2EFFFFFF), circle),
+                .background(if (focused) Color.White else if (accent) UiC.Accent else Color(0x1AFFFFFF), circle)
+                .border(1.dp, if (focused) Color.White else if (accent) UiC.Accent else Color(0x2EFFFFFF), circle),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, desc, tint = if (accent) Color(0xFF08080B) else Color.White, modifier = Modifier.size(24.dp)) }
+        ) { Icon(icon, desc, tint = if (focused || accent) Color(0xFF08080B) else Color.White, modifier = Modifier.size(24.dp)) }
     }
 }
 
 /** Pill with an icon and a short "Label: value" text. */
 @Composable
 private fun CtlChip(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.06f, modifier = modifier) {
+    FocusBox(onClick = onClick, shape = RoundedCornerShape(50), focusScale = 1.08f, modifier = modifier) { focused ->
+        val ink = if (focused) Color(0xFF08080B) else Color.White
         Row(
-            Modifier.background(Color(0x1AFFFFFF), RoundedCornerShape(50)).border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(50))
+            Modifier.background(if (focused) Color.White else Color(0x1AFFFFFF), RoundedCornerShape(50))
+                .border(1.dp, if (focused) Color.White else Color(0x24FFFFFF), RoundedCornerShape(50))
                 .padding(horizontal = 13.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Icon(icon, null, tint = ink, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(7.dp))
-            Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(label, color = ink, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
         }
     }
 }
@@ -912,14 +921,15 @@ private fun OptionStrip(title: String, options: List<TrackOpt>, empty: String, o
         androidx.compose.foundation.lazy.LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(options.size) { i ->
                 val o = options[i]
-                FocusBox(onClick = { onPick(o) }, shape = RoundedCornerShape(50), focusScale = 1.06f, modifier = if (i == focusIndex) Modifier.focusRequester(first) else Modifier) {
+                FocusBox(onClick = { onPick(o) }, shape = RoundedCornerShape(50), focusScale = 1.06f, modifier = if (i == focusIndex) Modifier.focusRequester(first) else Modifier) { focused ->
+                    val ink = if (focused) Color(0xFF08080B) else Color.White
                     Row(
-                        Modifier.background(if (o.selected) UiC.Accent.copy(alpha = 0.35f) else Color(0x1AFFFFFF), RoundedCornerShape(50))
-                            .border(1.dp, if (o.selected) UiC.Accent else Color(0x24FFFFFF), RoundedCornerShape(50)).padding(horizontal = 13.dp, vertical = 8.dp),
+                        Modifier.background(if (focused) Color.White else if (o.selected) UiC.Accent.copy(alpha = 0.35f) else Color(0x1AFFFFFF), RoundedCornerShape(50))
+                            .border(1.dp, if (focused) Color.White else if (o.selected) UiC.Accent else Color(0x24FFFFFF), RoundedCornerShape(50)).padding(horizontal = 13.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (o.selected) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
-                        Text(o.label, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                        if (o.selected) { Icon(Icons.Default.Check, null, tint = ink, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
+                        Text(o.label, color = ink, fontSize = 13.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
                     }
                 }
             }
